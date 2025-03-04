@@ -183,7 +183,7 @@ make_temp() {
 }
 
 build_hostdeps() {
-    for hostdep in ${hostdeps} ${hostrundeps}; do
+    for hostdep in ${default_hostdeps} ${hostdeps} ${default_hostrundeps} ${hostrundeps}; do
         [ -f "${base_dir}"/host-recipes/${hostdep} ] || die "missing host dependency '${hostdep}' for recipe '${name}'"
 
         [ -d "${build_dir}"/host-pkgs/${hostdep} ] && continue
@@ -193,7 +193,7 @@ build_hostdeps() {
 }
 
 build_deps() {
-    for dep in ${deps} ${builddeps}; do
+    for dep in ${default_deps} ${deps} ${default_builddeps} ${builddeps}; do
         [ -f "${base_dir}"/recipes/${dep} ] || die "missing dependency '${dep}' for recipe '${name}'"
 
         [ -d "${build_dir}"/pkgs/${dep} ] && continue
@@ -205,7 +205,7 @@ build_deps() {
 get_hostdeps_file_run() {
     deps_to_do=""
 
-    for hostdep in ${hostrundeps}; do
+    for hostdep in ${default_hostrundeps} ${hostrundeps}; do
         grep " ${hostdep} " "${hostdeps_file}" >/dev/null 2>&1 || deps_to_do="${deps_to_do} ${hostdep}"
         grep " ${hostdep} " "${hostdeps_file}" >/dev/null 2>&1 || printf " ${hostdep} " >> "${hostdeps_file}"
     done
@@ -218,7 +218,7 @@ get_hostdeps_file_run() {
 get_hostdeps_file() {
     deps_to_do=""
 
-    for hostdep in ${hostdeps} ${hostrundeps}; do
+    for hostdep in ${default_hostdeps} ${hostdeps} ${default_hostrundeps} ${hostrundeps}; do
         grep " ${hostdep} " "${hostdeps_file}" >/dev/null 2>&1 || deps_to_do="${deps_to_do} ${hostdep}"
         grep " ${hostdep} " "${hostdeps_file}" >/dev/null 2>&1 || printf " ${hostdep} " >> "${hostdeps_file}"
     done
@@ -231,7 +231,7 @@ get_hostdeps_file() {
 get_builddeps_file() {
     deps_to_do=""
 
-    for dep in ${deps} ${builddeps}; do
+    for dep in ${default_deps} ${deps} ${default_builddeps} ${builddeps}; do
         grep " ${dep} " "${deps_file}" >/dev/null 2>&1 || deps_to_do="${deps_to_do} ${dep}"
         grep " ${dep} " "${deps_file}" >/dev/null 2>&1 || printf " ${dep} " >> "${deps_file}"
     done
@@ -244,7 +244,7 @@ get_builddeps_file() {
 get_deps_file() {
     deps_to_do=""
 
-    for dep in ${deps}; do
+    for dep in ${default_deps} ${deps}; do
         grep " ${dep} " "${deps_file}" >/dev/null 2>&1 || deps_to_do="${deps_to_do} ${dep}"
         grep " ${dep} " "${deps_file}" >/dev/null 2>&1 || printf " ${dep} " >> "${deps_file}"
     done
@@ -1053,7 +1053,7 @@ cmd_install() {
     else
         for ppkg in "$@"; do
             for pkg in $(eval '(' cd "'${base_dir}'"/recipes '&&' echo "${ppkg}" ')' ); do
-                deps="${deps} ${pkg}"
+                deps="${default_deps} ${deps} ${pkg}"
             done
         done
 
