@@ -1939,7 +1939,7 @@ case "$1" in
         shift 1
         cmd_build "$@"
         ;;
-    regenerate)
+    regenerate|regen)
         shift 1
         cmd_prepare "$@"
         ;;
