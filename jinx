@@ -160,7 +160,7 @@ fi
 JINX_CONFIG_FILE="$(cd "$(dirname "$JINX_CONFIG_FILE")" && pwd -P)"/"$(basename "$JINX_CONFIG_FILE")"
 
 if [ -z "$JINX_CACHE_DIR" ]; then
-    JINX_CACHE_DIR="${build_dir}/.jinx-cache"
+    JINX_CACHE_DIR="${base_dir}/.jinx-cache"
 fi
 if ! [ -d "$(dirname "$JINX_CACHE_DIR")" ]; then
     die "$0: cannot access cache directory parent"
