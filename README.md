@@ -7,7 +7,7 @@ system distributions inspired by [xbstrap](https://github.com/managarm/xbstrap)
 and Arch Linux's [PKGBUILDs](https://wiki.archlinux.org/title/PKGBUILD).
 
 Some examples of hobby OSes using Jinx are [Vinix](https://github.com/vlang/vinix),
-[Gloire](https://github.com/streaksu/Gloire), and [Jinix](https://github.com/48cf/jinix).
+[Gloire](https://codeberg.org/Ironclad/Gloire), and [Jinix](https://github.com/48cf/jinix).
 
 ### Dependencies
 - Linux distro (other OSes are not supported)
