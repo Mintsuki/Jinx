@@ -1096,7 +1096,7 @@ cmd_check_updates() {
                 continue
             fi
 
-            checked_vers="$(echo "$checked_vers" | sed 's/"//g')"
+            checked_vers="$(echo "$checked_vers" | sed 's/\"//g')"
 
             if ! [ "$version" = "$checked_vers" ]; then
                 if ! [ "$(printf "$checked_vers\n$version\n" | sort -Vr | head -n 1)" = "$version" ]; then
