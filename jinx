@@ -38,12 +38,18 @@ jinx_minor_ver="0"
 
 jinx_version="${jinx_major_ver}.${jinx_minor_ver}"
 
+debian_snapshot="20250401T023134Z"
+
 XBPS_VERSION=0.59.2
 
 die() {
     echo "$1"
     exit 1
 }
+
+if [ -z "$1" ]; then
+    die "$0: no command specified."
+fi
 
 case "$1" in
     version|--version)
@@ -56,17 +62,21 @@ if ! [ "$(uname -s)" = "Linux" ]; then
     die "$0: Jinx only supports running on Linux hosts."
 fi
 
-if [ "$(id -u)" = "0" ]; then
-    case "$LD_LIBRARY_PATH" in
-        *libfakeroot*)
-            ;;
-        *)
-            die "$0: Jinx does not support running as root."
-            ;;
-    esac
-fi
-
-debian_snapshot="20250401T023134Z"
+case "$1" in
+    install)
+        ;;
+    *)
+        if [ "$(id -u)" = "0" ]; then
+            case "$LD_LIBRARY_PATH" in
+                *libfakeroot*)
+                    ;;
+                *)
+                    die "$0: Jinx does not support running as root."
+                    ;;
+            esac
+        fi
+        ;;
+esac
 
 case "$(uname -m)" in
     x86_64)
@@ -1052,6 +1062,26 @@ cmd_build() {
     done
 }
 
+cmd_build_if_needed() {
+    for ppkg in "$@"; do
+        for pkg in $(eval '(' cd "'${base_dir}'"/recipes '&&' echo "${ppkg}" ')' ); do
+            (
+                set -e
+                unset version
+                unset from_source
+                . "${base_dir}"/recipes/${pkg}
+                if ! [ -z "${from_source}" ]; then
+                    version=$(unset version && source_source_recipe ${from_source} && echo "$version")
+                fi
+
+                [ -f "${build_dir}"/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps ]
+            ) && continue
+
+            "${script}" internal-do-pkg "${pkg}"
+        done
+    done
+}
+
 cmd_prepare() {
     for i in "$@"; do
         "${script}" internal-do-prepare "$i"
@@ -1142,29 +1172,11 @@ cmd_install() {
     mkdir -m 755 -p "${sysroot}"
 
     pkgs_to_install=""
-    if [ "$1" = '*' ]; then
-        for pkg in "${base_dir}"/recipes/*; do
-            pkgs_to_install="${pkgs_to_install} $(basename "${pkg}")"
+    for ppkg in "$@"; do
+        for pkg in $(eval '(' cd "'${base_dir}'"/recipes '&&' echo "${ppkg}" ')' ); do
+            pkgs_to_install="${pkgs_to_install} ${pkg}"
         done
-    else
-        for ppkg in "$@"; do
-            for pkg in $(eval '(' cd "'${base_dir}'"/recipes '&&' echo "${ppkg}" ')' ); do
-                deps="${deps} ${pkg}"
-            done
-        done
-
-        make_temp
-        deps_file="${tmp}"
-
-        echo "* resolving dependencies..."
-
-        get_deps_file
-
-        pkgs_to_install="$(cat "${deps_file}")"
-    fi
-
-    make_temp
-    all_files="${tmp}"
+    done
 
     for pkg in ${pkgs_to_install}; do
         echo "* installing ${pkg}..."
@@ -1180,7 +1192,7 @@ cmd_install() {
         fi
 
         if ! [ -f "${build_dir}"/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps ]; then
-            "${script}" internal-do-pkg "${pkg}"
+            die "* package '${name}' not built"
         fi
 
         LD_LIBRARY_PATH="$XBPS_BUILDENV/usr/lib/$(uname -m)-linux-gnu" \
@@ -1995,6 +2007,10 @@ case "$1" in
         shift 1
         cmd_build "$@"
         ;;
+    build-if-needed)
+        shift 1
+        cmd_build_if_needed "$@"
+        ;;
     regenerate|regen)
         shift 1
         cmd_prepare "$@"
@@ -2022,10 +2038,6 @@ case "$1" in
         redo_first_use
         ;;
     *)
-        if [ -z "$1" ]; then
-            die "$0: no command specified."
-        else
-            die "$0: unknown command: $1"
-        fi
+        die "$0: unknown command: $1"
         ;;
 esac
