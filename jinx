@@ -174,6 +174,8 @@ fi
 make_dir "$JINX_CACHE_DIR"
 JINX_CACHE_DIR="$(cd "$JINX_CACHE_DIR" && pwd -P)"
 
+XBPS_BUILDENV="$JINX_CACHE_DIR/xbps_buildenv"
+
 if [ "$in_container" = "false" ]; then
     make_dir "${base_dir}/sources" "${build_dir}/host-builds" "${build_dir}/host-pkgs" "${build_dir}/builds" "${build_dir}/pkgs"
 fi
@@ -330,7 +332,8 @@ prepare_container() {
     sysroot_dir="${tmp}"
 
     for dep in $(cat "${deps_file}"); do
-        "${JINX_CACHE_DIR}"/xbps-bin/bin/xbps-install -y -r "${sysroot_dir}" -R "${build_dir}"/pkgs "${dep}" >/dev/null
+        LD_LIBRARY_PATH="$XBPS_BUILDENV/usr/lib/$(uname -m)-linux-gnu" \
+            "${JINX_CACHE_DIR}"/xbps-bin/bin/xbps-install -y -r "${sysroot_dir}" -R "${build_dir}"/pkgs "${dep}" >/dev/null
     done
 
     if [ "$JINX_NATIVE_MODE" = "yes" ] && [ -z "$cross_compile" ]; then
@@ -1026,6 +1029,7 @@ do_pkg() {
 
     destroy_container
 
+        LD_LIBRARY_PATH="$XBPS_BUILDENV/usr/lib/$(uname -m)-linux-gnu" \
         XBPS_TARGET_ARCH=$JINX_ARCH \
     "$JINX_CACHE_DIR"/xbps-bin/bin/xbps-rindex \
         -a "${build_dir}"/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps \
@@ -1179,7 +1183,8 @@ cmd_install() {
             "${script}" internal-do-pkg "${pkg}"
         fi
 
-        "$JINX_CACHE_DIR"/xbps-bin/bin/xbps-install -y -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} >/dev/null
+        LD_LIBRARY_PATH="$XBPS_BUILDENV/usr/lib/$(uname -m)-linux-gnu" \
+            "$JINX_CACHE_DIR"/xbps-bin/bin/xbps-install -y -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} >/dev/null
     done
 }
 
@@ -1874,15 +1879,12 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
     run_in_container1 "$JINX_CACHE_DIR/sets/.image" apt-get install -y autopoint bash bison bzip2 curl diffutils docbook-xsl doxygen fakeroot file findutils flex gawk gettext grep gzip xsltproc libarchive13 libssl3t64 m4 make patch perl python3 sed tar texinfo w3m which xmlto xz-utils zlib1g zstd
 
     # Build xbps
-    XBPS_BUILDENV="$JINX_CACHE_DIR/xbps_buildenv"
     cp -Pprf "$JINX_CACHE_DIR/sets/.image/." "${XBPS_BUILDENV}/"
     curl -Lo "${XBPS_BUILDENV}/xbps-${XBPS_VERSION}.tar.gz" https://github.com/void-linux/xbps/archive/refs/tags/${XBPS_VERSION}.tar.gz
     ( cd "${XBPS_BUILDENV}" && gunzip < xbps-${XBPS_VERSION}.tar.gz | tar -xf - )
     run_in_container1 "${XBPS_BUILDENV}" apt-get install -y build-essential pkg-config zlib1g-dev libssl-dev libarchive-dev
     run_in_container1 "${XBPS_BUILDENV}" sh -c "cd /xbps-${XBPS_VERSION} && CFLAGS='-O2 -pipe -Wno-error' ./configure --disable-debug --enable-rpath --prefix=/ --sysconfdir=/ && make -j${parallelism} && make DESTDIR=/xbps-bin install"
     mv "${XBPS_BUILDENV}/xbps-bin" "$JINX_CACHE_DIR/"
-    chmod -R 777 "$XBPS_BUILDENV"
-    rm -rf "$XBPS_BUILDENV"
 }
 
 first_use() {
