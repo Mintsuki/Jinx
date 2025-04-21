@@ -1948,6 +1948,10 @@ if ! [ "$JINX_MAJOR_VER" = "$jinx_major_ver" ]; then
     die "$0: needed major version ($JINX_MAJOR_VER) differs from Jinx-provided major version ($jinx_major_ver)"
 fi
 
+if [ -z "$JINX_ARCH" ]; then
+    die "$0: required config variable \$JINX_ARCH missing"
+fi
+
 if ! [ -d "$JINX_CACHE_DIR" ]; then
     first_use
 fi
