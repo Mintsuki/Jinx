@@ -343,7 +343,7 @@ prepare_container() {
     for dep in $(cat "${deps_file}"); do
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${JINX_ARCH}" \
-            "$JINX_CACHE_DIR"/xbps-bin/bin/xbps-install -y -r "${sysroot_dir}" -R "${build_dir}"/pkgs "${dep}" >/dev/null
+            "$JINX_CACHE_DIR"/xbps-bin/xbps-install -y -r "${sysroot_dir}" -R "${build_dir}"/pkgs "${dep}" >/dev/null
     done
 
     if [ "$JINX_NATIVE_MODE" = "yes" ] && [ -z "$cross_compile" ]; then
@@ -863,7 +863,7 @@ do_package() {
     cd "${build_dir}"/pkgs
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${JINX_ARCH}" \
-    "$JINX_CACHE_DIR"/xbps-bin/bin/xbps-create \
+    "$JINX_CACHE_DIR"/xbps-bin/xbps-create \
         -A $JINX_ARCH \
         -s ${name} \
         -n ${name}-${version}_${revision} \
@@ -1043,7 +1043,7 @@ do_pkg() {
 
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${JINX_ARCH}" \
-    "$JINX_CACHE_DIR"/xbps-bin/bin/xbps-rindex \
+    "$JINX_CACHE_DIR"/xbps-bin/xbps-rindex \
         -a "${build_dir}"/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps \
         -f
 }
@@ -1199,7 +1199,7 @@ cmd_install() {
 
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${JINX_ARCH}" \
-            "$JINX_CACHE_DIR"/xbps-bin/bin/xbps-install -y -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} >/dev/null
+            "$JINX_CACHE_DIR"/xbps-bin/xbps-install -y -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} >/dev/null
     done
 }
 
@@ -1911,7 +1911,7 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
     for f in "${XBPS_BUILDENV}"/xbps-bin/bin/*.static; do
         mv "$f" "${f%.static*}"
     done
-    mv "${XBPS_BUILDENV}/xbps-bin" "$JINX_CACHE_DIR/"
+    mv "${XBPS_BUILDENV}/xbps-bin/bin" "$JINX_CACHE_DIR/xbps-bin"
     chmod -R 777 "${XBPS_BUILDENV}"
     rm -rf "${XBPS_BUILDENV}"
 }
