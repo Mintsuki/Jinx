@@ -1199,6 +1199,11 @@ cmd_check_updates() {
 }
 
 cmd_install() {
+    force_install=""
+    if [ "$1" = "-f" ]; then
+        force_install="$1"
+        shift 1
+    fi
     sysroot="$1"
     shift 1
     mkdir -m 755 -p "${sysroot}"
@@ -1229,7 +1234,7 @@ cmd_install() {
 
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${JINX_ARCH}" \
-            "$JINX_CACHE_DIR"/xbps-bin/xbps-install -y -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} >/dev/null
+            "$JINX_CACHE_DIR"/xbps-bin/xbps-install -y $force_install -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} >/dev/null
     done
 }
 
@@ -2084,6 +2089,10 @@ case "$1" in
     install)
         shift 1
         cmd_install "$@"
+        ;;
+    reinstall)
+        shift 1
+        cmd_install -f "$@"
         ;;
     rbrt)
         rebuild_rbrt
