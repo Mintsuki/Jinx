@@ -1007,14 +1007,14 @@ do_host_pkg() {
 
     echo "* building host package: $name"
 
+    cross_compile=yes
+    prepare_container
+
     if ! [ -z "${from_source}" ]; then
         from_source="$(. "${base_dir}"/host-recipes/$1 && echo "$from_source")"
         [ -f "${base_dir}"/sources/${from_source}.prepared ] || \
             "${script}" internal-source "${from_source}"
     fi
-
-    cross_compile=yes
-    prepare_container
 
     if ! [ "${allow_source_writes}" = "yes" ]; then
         container_sources_ro=":ro"
@@ -1032,6 +1032,31 @@ do_host_pkg() {
     unset container_sources_ro
 
     destroy_container
+
+    if [ "$JINX_CLEAN_WORKDIRS" = "yes" ]; then
+        (
+        unset from_source
+        unset clean_workdirs
+        . "${base_dir}"/host-recipes/$1
+
+        if ! [ "$clean_workdirs" = "no" ]; then
+            rm -rf "${build_dir}"/host-builds/$1
+
+            if [ -z "${from_source}" ]; then
+                source_source_recipe $1
+            else
+                source_source_recipe ${from_source}
+            fi
+
+            rm -rf \
+                "${base_dir}"/sources/"${name}" \
+                "${base_dir}"/sources/"${name}"-clean \
+                "${base_dir}"/sources/"${name}"-workdir \
+                "${base_dir}"/sources/"${name}".patched \
+                "${base_dir}"/sources/"${name}".prepared
+        fi
+        )
+    fi
 }
 
 do_pkg() {
@@ -1047,11 +1072,11 @@ do_pkg() {
         version=$(unset version && source_source_recipe ${from_source} && echo "$version")
     fi
 
+    prepare_container
+
     if ! [ -z "${tarball_url}" ] || ! [ -z "${git_url}" ] || ! [ -z "${hg_url}" ] || ! [ -z "${source_dir}" ]; then
         "${script}" internal-source "${name}"
     fi
-
-    prepare_container
 
     if ! [ "${allow_source_writes}" = "yes" ]; then
         container_sources_ro=":ro"
@@ -1076,6 +1101,31 @@ do_pkg() {
     "$JINX_CACHE_DIR"/xbps-bin/xbps-rindex \
         -a "${build_dir}"/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps \
         -f
+
+    if [ "$JINX_CLEAN_WORKDIRS" = "yes" ]; then
+        (
+        unset from_source
+        unset clean_workdirs
+        . "${base_dir}"/recipes/$1
+
+        if ! [ "$clean_workdirs" = "no" ]; then
+            rm -rf "${build_dir}"/builds/$1
+
+            if [ -z "${from_source}" ]; then
+                source_source_recipe $1
+            else
+                source_source_recipe ${from_source}
+            fi
+
+            rm -rf \
+                "${base_dir}"/sources/"${name}" \
+                "${base_dir}"/sources/"${name}"-clean \
+                "${base_dir}"/sources/"${name}"-workdir \
+                "${base_dir}"/sources/"${name}".patched \
+                "${base_dir}"/sources/"${name}".prepared
+        fi
+        )
+    fi
 }
 
 cmd_host_build() {
