@@ -1309,7 +1309,7 @@ cmd_install() {
         if ! [ -z "${force_install}" ]; then
             XBPS_ARCH=invalid \
             XBPS_TARGET_ARCH="${JINX_ARCH}" \
-                "$JINX_CACHE_DIR"/xbps-bin/xbps-remove -Fy -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg}
+                "$JINX_CACHE_DIR"/xbps-bin/xbps-remove -Ffy -r "${sysroot}" ${pkg} >/dev/null 2>&1 || true
         fi
 
         XBPS_ARCH=invalid \
