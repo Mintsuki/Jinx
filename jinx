@@ -1037,10 +1037,7 @@ do_host_pkg() {
             "${script}" internal-source "${from_source}"
     fi
 
-    if ! [ "${allow_source_writes}" = "yes" ]; then
-        container_sources_ro=":ro"
-    fi
-
+    container_sources_ro=":ro"
     if ! [ -d "${base_dir}"/host-builds/$1 ]; then
         run_in_container internal-configure-host $1
     fi
@@ -1099,10 +1096,7 @@ do_pkg() {
         "${script}" internal-source "${name}"
     fi
 
-    if ! [ "${allow_source_writes}" = "yes" ]; then
-        container_sources_ro=":ro"
-    fi
-
+    container_sources_ro=":ro"
     if ! [ -d "${base_dir}"/builds/$1 ]; then
         run_in_container internal-configure $1
     fi
