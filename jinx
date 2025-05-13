@@ -285,6 +285,11 @@ run_in_container1() {
 
     make_dir "$run_in_cont1_root"/jinx-cache
 
+    nochown_so=""
+    if [ -f "$JINX_CACHE_DIR/nochown.so" ]; then
+        nochown_so="--env LD_PRELOAD=/jinx-cache/nochown.so"
+    fi
+
     "$JINX_CACHE_DIR/rbrt" \
         --root "$run_in_cont1_root" rw \
         --uid 0 \
@@ -294,7 +299,7 @@ run_in_container1() {
         --env LC_COLLATE=C \
         --env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin \
         --env LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:/usr/lib64:/usr/lib \
-        --env LD_PRELOAD=/jinx-cache/nochown.so \
+        ${nochown_so} \
         -m"${apt_cache}":/var/cache/apt/archives \
         -m"$JINX_CACHE_DIR":/jinx-cache \
         -- \
@@ -1569,48 +1574,6 @@ EOF
     cc -O2 -pipe -fno-strict-aliasing -Wall -Wextra "$JINX_CACHE_DIR/b2sum.c" -o "$JINX_CACHE_DIR/b2sum"
 }
 
-rebuild_nochown() {
-    cat <<'EOF' >"$JINX_CACHE_DIR/nochown.c"
-#include <stdio.h>
-#include <unistd.h>
-#include <fcntl.h>
-
-int chown(const char *pathname, uid_t owner, gid_t group) {
-    if (owner == 0 && group == 0) {
-        return 0;
-    }
-    printf("\e[93mchown(%s, %d, %d); suppressed\e[0m\n", pathname, owner, group);
-    return 0;
-}
-
-int fchown(int fd, uid_t owner, gid_t group) {
-    if (owner == 0 && group == 0) {
-        return 0;
-    }
-    printf("\e[93mfchown(%d, %d, %d); suppressed\e[0m\n", fd, owner, group);
-    return 0;
-}
-
-int lchown(const char *pathname, uid_t owner, gid_t group) {
-    if (owner == 0 && group == 0) {
-        return 0;
-    }
-    printf("\e[93mlchown(%s, %d, %d); suppressed\e[0m\n", pathname, owner, group);
-    return 0;
-}
-
-int fchownat(int dirfd, const char *pathname,
-             uid_t owner, gid_t group, int flags) {
-    if (owner == 0 && group == 0) {
-        return 0;
-    }
-    printf("\e[93mfchownat(%d, %s, %d, %d, %d); suppressed\e[0m\n", dirfd, pathname, owner, group, flags);
-    return 0;
-}
-EOF
-    cc -O2 -pipe -Wall -Wextra -fPIC -shared -nostdlib "$JINX_CACHE_DIR/nochown.c" -o "$JINX_CACHE_DIR/nochown.so"
-}
-
 rebuild_rbrt() {
     cat <<'EOF' >"$JINX_CACHE_DIR/rbrt.c"
 // Written by 48cf (iretq@riseup.net)
@@ -2073,6 +2036,47 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
     done
     mv "${XBPS_BUILDENV}/xbps-bin/bin" "$JINX_CACHE_DIR/xbps-bin"
 
+    cat >"${XBPS_BUILDENV}/nochown.c" <<'EOF'
+#include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+int chown(const char *pathname, uid_t owner, gid_t group) {
+    if (owner == 0 && group == 0) {
+        return 0;
+    }
+    printf("\e[93mchown(%s, %d, %d); suppressed\e[0m\n", pathname, owner, group);
+    return 0;
+}
+
+int fchown(int fd, uid_t owner, gid_t group) {
+    if (owner == 0 && group == 0) {
+        return 0;
+    }
+    printf("\e[93mfchown(%d, %d, %d); suppressed\e[0m\n", fd, owner, group);
+    return 0;
+}
+
+int lchown(const char *pathname, uid_t owner, gid_t group) {
+    if (owner == 0 && group == 0) {
+        return 0;
+    }
+    printf("\e[93mlchown(%s, %d, %d); suppressed\e[0m\n", pathname, owner, group);
+    return 0;
+}
+
+int fchownat(int dirfd, const char *pathname,
+             uid_t owner, gid_t group, int flags) {
+    if (owner == 0 && group == 0) {
+        return 0;
+    }
+    printf("\e[93mfchownat(%d, %s, %d, %d, %d); suppressed\e[0m\n", dirfd, pathname, owner, group, flags);
+    return 0;
+}
+EOF
+    run_in_container1 "${XBPS_BUILDENV}" gcc -O2 -pipe -Wall -Wextra -fPIC -shared /nochown.c -o /nochown.so
+    mv "${XBPS_BUILDENV}/nochown."* "$JINX_CACHE_DIR/"
+
     chmod -R 777 "${XBPS_BUILDENV}"
     rm -rf "${XBPS_BUILDENV}"
 }
@@ -2083,7 +2087,6 @@ first_use() {
     make_dir "$JINX_CACHE_DIR"
 
     rebuild_b2sum
-    rebuild_nochown
     rebuild_rbrt
 
     reinit_container
