@@ -299,6 +299,7 @@ run_in_container1() {
         --env LC_COLLATE=C \
         --env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin \
         --env LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:/usr/lib64:/usr/lib \
+        --env DEBIAN_FRONTEND=noninteractive \
         ${nochown_so} \
         -m"${apt_cache}":/var/cache/apt/archives \
         -m"$JINX_CACHE_DIR":/jinx-cache:ro \
