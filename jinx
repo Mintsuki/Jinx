@@ -301,7 +301,7 @@ run_in_container1() {
         --env LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:/usr/lib64:/usr/lib \
         ${nochown_so} \
         -m"${apt_cache}":/var/cache/apt/archives \
-        -m"$JINX_CACHE_DIR":/jinx-cache \
+        -m"$JINX_CACHE_DIR":/jinx-cache:ro \
         -- \
         "$@"
 
@@ -441,6 +441,11 @@ run_in_container() {
     if [ -d "${base_dir}"/.git ]; then
         make_temp -d
         shadow_git_dir_base="-m${tmp}:/base_dir/.git"
+    fi
+
+    nochown_so=""
+    if [ -f "$JINX_CACHE_DIR/nochown.so" ]; then
+        nochown_so="--env LD_PRELOAD=/base_dir/.jinx-cache/nochown.so"
     fi
 
     "$JINX_CACHE_DIR/rbrt" \
