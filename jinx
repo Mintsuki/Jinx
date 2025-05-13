@@ -492,7 +492,8 @@ do_git_fetch() {
     fi
 
     if [ "${shallow}" = "no" ]; then
-        git clone "${git_url}" --revision="${commit}" "${base_dir}"/sources/${name}
+        git clone "${git_url}" "${base_dir}"/sources/${name}
+        git -C "${base_dir}"/sources/${name} checkout "${commit}"
     else
         git clone "${git_url}" --revision="${commit}" --depth=1 "${base_dir}"/sources/${name}
         git -C "${base_dir}"/sources/${name} fetch --tags
