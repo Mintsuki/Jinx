@@ -185,8 +185,8 @@ fi
 
 apt_cache="$JINX_CACHE_DIR/apt-cache"
 
-temp_collect="${build_dir}/.jinx-errcode"
-trap 'echo $? >"${build_dir}"/.jinx-errcode; eval rm -rf "$temp_collect"' EXIT
+temp_collect=""
+trap 'eval rm -rf "$temp_collect"' EXIT
 
 make_temp() {
     tmp="$(mktemp "$JINX_CACHE_DIR/tmp.XXXXXXXX")"
@@ -1103,8 +1103,7 @@ do_pkg() {
     fi
     run_in_container internal-build $1
     rm -rf "${base_dir}"/pkgs/$1
-    run_in_container internal-package $1
-    if [ -f "${build_dir}"/.jinx-errcode ] && ! [ "$(cat "${build_dir}"/.jinx-errcode)" = "0" ]; then
+    if ! run_in_container internal-package $1; then
         rm -rf "${base_dir}"/pkgs/$1
         return 1
     fi
