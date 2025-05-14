@@ -461,6 +461,7 @@ run_in_container() {
         --env JINX_PARALLELISM="$parallelism" \
         --env JINX_CONFIG_FILE=/jinx-config \
         --env JINX_SOURCE_DIR=/base_dir \
+        ${nochown_so} \
         ${container_pkgs_native_mount:+"${container_pkgs_native_mount}"} \
         ${sysroot_native_mount:+"${sysroot_native_mount}"} \
         -m"${script}":/jinx:ro \
