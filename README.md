@@ -16,7 +16,6 @@ Some examples of hobby OSes using Jinx are [Vinix](https://github.com/vlang/vini
 - findutils (for `find` and `xargs`)
 - awk
 - cc (gcc or clang work)
-- git
 - grep
 - gzip
 - tar
