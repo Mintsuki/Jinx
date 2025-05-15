@@ -516,7 +516,7 @@ do_git_fetch() {
         git -C "${base_dir}"/sources/${name} checkout "${commit}"
     else
         git clone "${git_url}" --revision="${commit}" --depth=1 "${base_dir}"/sources/${name}
-        git -C "${base_dir}"/sources/${name} fetch --tags
+        git -C "${base_dir}"/sources/${name} fetch --tags --depth=1
     fi
 }
 
