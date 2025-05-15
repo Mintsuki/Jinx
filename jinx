@@ -34,7 +34,7 @@ export LC_COLLATE
 umask 0022
 
 jinx_major_ver="0.5"
-jinx_minor_ver="9"
+jinx_minor_ver="10"
 
 jinx_version="${jinx_major_ver}.${jinx_minor_ver}"
 
