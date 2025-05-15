@@ -52,9 +52,29 @@ if [ -z "$1" ]; then
     die "$0: no command specified."
 fi
 
+cmd_help() {
+    echo "usage: $0 <command> <package>"
+    printf "\n   help|--help        Displays this message"
+    printf "\n   version|--version  Prints the version"
+    printf "\n   build              Builds package(s), does incremental builds"
+    printf "\n   build-if-needed    Builds package(s) if necessary"
+    printf "\n   rebuild            Rebuilds package(s)"
+    printf "\n   host-build         Same as build, but for host package(s)"
+    printf "\n   host-rebuild       Same as rebuild, but for host package(s)"
+    printf "\n   regenerate|regen   Regenerates patch for package(s) and re-runs prepare step"
+    printf "\n   install            Installs package(s)"
+    printf "\n   check-updates      Checks on repology whether package(s) are up to date"
+    printf "\n   rebuild-cache      Rebuilds Jinx cache"
+    printf "\n\nexample: \"./jinx check-updates '*'\"\n"
+}
+
 case "$1" in
     version|--version)
         echo "Jinx version $jinx_version"
+        exit 0
+        ;;
+    help|--help)
+        cmd_help
         exit 0
         ;;
 esac
