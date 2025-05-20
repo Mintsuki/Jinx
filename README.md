@@ -21,3 +21,7 @@ Some examples of hobby OSes using Jinx are [Vinix](https://github.com/vlang/vini
 - tar
 - procps (for `free`)
 - xz
+
+### Documentation
+
+Documentation can be found in [DOCUMENTATION.md](DOCUMENTATION.md).
