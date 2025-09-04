@@ -34,7 +34,7 @@ export LC_COLLATE
 umask 0022
 
 jinx_major_ver="0.6"
-jinx_minor_ver="9"
+jinx_minor_ver="11"
 
 jinx_version="${jinx_major_ver}.${jinx_minor_ver}"
 
@@ -332,7 +332,7 @@ run_in_container1() {
         mount -t tmpfs tmpfs '${run_in_cont1_root}/tmp'
         mount -t tmpfs tmpfs '${run_in_cont1_root}/var/tmp'
 
-        mount --bind /etc/resolv.conf '${run_in_cont1_root}/etc/resolv.conf'
+        mount -o ro --bind /etc/resolv.conf '${run_in_cont1_root}/etc/resolv.conf'
         mount --bind '${apt_cache}' '${run_in_cont1_root}/var/cache/apt/archives'
 
         env -i PATH="${PATH}" chroot '${run_in_cont1_root}' /bin/sh -c '
@@ -450,7 +450,8 @@ run_in_container() {
 
     make_dir "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/build_dir"
 
-    native_mode_mounts=""
+    container_pkgs_native_mount=""
+    sysroot_native_mount=""
     if ( [ "$JINX_NATIVE_MODE" = "yes" ] && [ "$cross_compile" = "yes" ] ) || ( ! [ "$JINX_NATIVE_MODE" = "yes" ] ); then
         make_dir "${imgroot}/sysroot"
 
@@ -481,6 +482,8 @@ run_in_container() {
     unshare --user --map-root-user --mount --pid --fork ${unshare_net_flag} -- sh -c "
         set -e
 
+        mount -o ro --bind '${imgroot}' '${imgroot}'
+
         mount --rbind --make-rslave /dev '${imgroot}/dev'
         mount -t proc proc '${imgroot}/proc'
         mount --rbind --make-rslave /sys '${imgroot}/sys'
@@ -488,7 +491,7 @@ run_in_container() {
         mount -t tmpfs tmpfs '${imgroot}/tmp'
         mount -t tmpfs tmpfs '${imgroot}/var/tmp'
 
-        mount --bind /etc/resolv.conf '${imgroot}/etc/resolv.conf'
+        mount -o ro --bind /etc/resolv.conf '${imgroot}/etc/resolv.conf'
 
         mount ${container_base_dir_ro} --bind '${base_dir}' '${imgroot}/base_dir'
         mount --bind '${build_dir}' '${imgroot}/build_dir'
@@ -963,13 +966,23 @@ precont_fetch() {
 
     get_real_source_dir
 
-    [ -d "${source_dir}" ] && return
+    if [ -f "${base_dir}"/sources/$1.version ] && [ "$(cat "${base_dir}"/sources/$1.version)" = "${version}" ]; then
+        return
+    fi
+    rm -rf "${base_dir}"/sources/$1
+    rm -rf "${base_dir}"/sources/$1-clean
+    rm -rf "${base_dir}"/sources/$1-workdir
+    rm -rf "${base_dir}"/sources/$1.version
+    rm -rf "${base_dir}"/sources/$1.patched
+    rm -rf "${base_dir}"/sources/$1.prepared
 
     cross_compile=yes
     allow_network="yes"
     prepare_container
     run_in_container internal-cont-fetch $1
     destroy_container
+
+    echo "${version}" >"${base_dir}"/sources/$1.version
 }
 
 precont_patch() {
@@ -1118,6 +1131,7 @@ do_host_pkg() {
                 "${base_dir}"/sources/"${name}" \
                 "${base_dir}"/sources/"${name}"-clean \
                 "${base_dir}"/sources/"${name}"-workdir \
+                "${base_dir}"/sources/"${name}".version \
                 "${base_dir}"/sources/"${name}".patched \
                 "${base_dir}"/sources/"${name}".prepared
         fi
@@ -1138,11 +1152,15 @@ do_pkg() {
         version=$(unset version && source_source_recipe ${from_source} && echo "$version")
     fi
 
-    prepare_container
-
     if ! [ -z "${tarball_url}" ] || ! [ -z "${git_url}" ] || ! [ -z "${hg_url}" ] || ! [ -z "${source_dir}" ]; then
         "${script}" internal-source "${name}"
     fi
+
+    if ! [ -f "${build_dir}"/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps ]; then
+        rm -rf "${build_dir}"/builds/"$1"
+    fi
+
+    prepare_container
 
     container_sources_ro="-o ro"
     if ! [ -d "${build_dir}"/builds/$1 ]; then
@@ -1204,6 +1222,7 @@ do_pkg() {
                 "${base_dir}"/sources/"${name}" \
                 "${base_dir}"/sources/"${name}"-clean \
                 "${base_dir}"/sources/"${name}"-workdir \
+                "${base_dir}"/sources/"${name}".version \
                 "${base_dir}"/sources/"${name}".patched \
                 "${base_dir}"/sources/"${name}".prepared
         fi
@@ -1405,7 +1424,7 @@ int fchownat(int dirfd, const char *pathname,
     return 0;
 }
 EOF
-    cc -O2 -pipe -Wall -Wextra -fPIC -shared "$JINX_CACHE_DIR/nochown.c" -o "$JINX_CACHE_DIR/sets/.image/nochown.so"
+    cc -O2 -pipe -std=c99 -Wall -Wextra -fPIC -shared "$JINX_CACHE_DIR/nochown.c" -o "$JINX_CACHE_DIR/sets/.image/nochown.so"
     rm "$JINX_CACHE_DIR/nochown.c"
 
     DEBOOTSTRAP_ARCH="$(uname -m)"
@@ -1439,7 +1458,7 @@ int main(int argc, char *argv[]) {
     return 1;
 }
 EOF
-    cc -O2 -pipe -Wall -Wextra "$JINX_CACHE_DIR/debootstrap_wrap.c" -o "$JINX_CACHE_DIR/debootstrap_wrap"
+    cc -O2 -pipe -std=c99 -Wall -Wextra "$JINX_CACHE_DIR/debootstrap_wrap.c" -o "$JINX_CACHE_DIR/debootstrap_wrap"
     rm "$JINX_CACHE_DIR/debootstrap_wrap.c"
 
     mkdir -p "$JINX_CACHE_DIR/sets/.image/var/cache/apt/archives"
