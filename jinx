@@ -34,7 +34,7 @@ export LC_COLLATE
 umask 0022
 
 jinx_major_ver="0.6"
-jinx_minor_ver="7"
+jinx_minor_ver="9"
 
 jinx_version="${jinx_major_ver}.${jinx_minor_ver}"
 
@@ -325,13 +325,19 @@ run_in_container1() {
     unshare --user --map-root-user --mount --pid --fork -- sh -c "
         set -e
 
-        mount --rbind /dev '${run_in_cont1_root}/dev'
-        mount -t proc /proc '${run_in_cont1_root}/proc'
-        mount --rbind /sys '${run_in_cont1_root}/sys'
+        mount --rbind --make-rslave /dev '${run_in_cont1_root}/dev'
+        mount -t proc proc '${run_in_cont1_root}/proc'
+        mount --rbind --make-rslave /sys '${run_in_cont1_root}/sys'
+        mount -t tmpfs run '${run_in_cont1_root}/run'
+        mount -t tmpfs tmpfs '${run_in_cont1_root}/tmp'
+        mount -t tmpfs tmpfs '${run_in_cont1_root}/var/tmp'
 
+        mount --bind /etc/resolv.conf '${run_in_cont1_root}/etc/resolv.conf'
         mount --bind '${apt_cache}' '${run_in_cont1_root}/var/cache/apt/archives'
 
         env -i PATH="${PATH}" chroot '${run_in_cont1_root}' /bin/sh -c '
+            set -e
+
             LD_PRELOAD=/nochown.so \
             HOME=/root \
             LANG=en_US.UTF-8 \
@@ -475,9 +481,14 @@ run_in_container() {
     unshare --user --map-root-user --mount --pid --fork ${unshare_net_flag} -- sh -c "
         set -e
 
-        mount --rbind /dev '${imgroot}/dev'
-        mount -t proc /proc '${imgroot}/proc'
-        mount --rbind /sys '${imgroot}/sys'
+        mount --rbind --make-rslave /dev '${imgroot}/dev'
+        mount -t proc proc '${imgroot}/proc'
+        mount --rbind --make-rslave /sys '${imgroot}/sys'
+        mount -t tmpfs run '${imgroot}/run'
+        mount -t tmpfs tmpfs '${imgroot}/tmp'
+        mount -t tmpfs tmpfs '${imgroot}/var/tmp'
+
+        mount --bind /etc/resolv.conf '${imgroot}/etc/resolv.conf'
 
         mount ${container_base_dir_ro} --bind '${base_dir}' '${imgroot}/base_dir'
         mount --bind '${build_dir}' '${imgroot}/build_dir'
@@ -488,6 +499,8 @@ run_in_container() {
         ${shadow_git_dir_build}
 
         env -i PATH="${PATH}" chroot '${imgroot}' /bin/sh -c '
+            set -e
+
             cd /build_dir
 
             LD_PRELOAD=/nochown.so \
@@ -1393,24 +1406,61 @@ int fchownat(int dirfd, const char *pathname,
 }
 EOF
     cc -O2 -pipe -Wall -Wextra -fPIC -shared "$JINX_CACHE_DIR/nochown.c" -o "$JINX_CACHE_DIR/sets/.image/nochown.so"
+    rm "$JINX_CACHE_DIR/nochown.c"
 
-    mkdir -p "$JINX_CACHE_DIR/sets/.image/dev"
-    mkdir -p "$JINX_CACHE_DIR/sets/.image/proc"
-    mkdir -p "$JINX_CACHE_DIR/sets/.image/sys"
+    DEBOOTSTRAP_ARCH="$(uname -m)"
+    case "${DEBOOTSTRAP_ARCH}" in
+        i?86) DEBOOTSTRAP_ARCH=i386 ;;
+        x86_64) DEBOOTSTRAP_ARCH=amd64 ;;
+        arm*) DEBOOTSTRAP_ARCH=armhf ;;
+        aarch64) DEBOOTSTRAP_ARCH=arm64 ;;
+        loongarch64) DEBOOTSTRAP_ARCH=loong64 ;;
+        ppc64le) DEBOOTSTRAP_ARCH=ppc64el ;;
+    esac
+
+    if ! command -v debootstrap >/dev/null 2>&1; then
+        die "error: missing debootstrap command"
+    fi
+
+    DEBOOTSTRAP_PATH="$(command -v debootstrap)"
+    make_temp -d
+    TMP_PATH="${tmp}"
+    cp "${DEBOOTSTRAP_PATH}" "${TMP_PATH}"/
+    sed "s/HOST_ARCH=[^;#]*/HOST_ARCH=${DEBOOTSTRAP_ARCH}/g" "${DEBOOTSTRAP_PATH}" >"${TMP_PATH}/debootstrap"
+    chmod +x "${TMP_PATH}/debootstrap"
+
+    cat >"$JINX_CACHE_DIR/debootstrap_wrap.c" <<EOF
+#include <unistd.h>
+
+int main(int argc, char *argv[]) {
+    (void)argc;
+    argv[0] = "${DEBOOTSTRAP_PATH}";
+    execv("${TMP_PATH}/debootstrap", argv);
+    return 1;
+}
+EOF
+    cc -O2 -pipe -Wall -Wextra "$JINX_CACHE_DIR/debootstrap_wrap.c" -o "$JINX_CACHE_DIR/debootstrap_wrap"
+    rm "$JINX_CACHE_DIR/debootstrap_wrap.c"
+
     mkdir -p "$JINX_CACHE_DIR/sets/.image/var/cache/apt/archives"
 
     unshare --user --map-root-user --mount --pid --fork -- sh -c "
         set -e
 
-        mount --rbind /dev '$JINX_CACHE_DIR/sets/.image/dev'
-        mount -t proc /proc '$JINX_CACHE_DIR/sets/.image/proc'
-        mount --rbind /sys '$JINX_CACHE_DIR/sets/.image/sys'
-
         mount --bind '${apt_cache}' '$JINX_CACHE_DIR/sets/.image/var/cache/apt/archives'
 
-        LD_PRELOAD='$JINX_CACHE_DIR/sets/.image/nochown.so' debootstrap \
+        LD_PRELOAD='$JINX_CACHE_DIR/sets/.image/nochown.so' '$JINX_CACHE_DIR/debootstrap_wrap' \
             --foreign sid '$JINX_CACHE_DIR/sets/.image' https://snapshot.debian.org/archive/debian/${debian_snapshot}/
     "
+    rm "$JINX_CACHE_DIR/debootstrap_wrap"
+
+    for dir in dev proc sys run tmp var/tmp; do
+        rm -rf "${JINX_CACHE_DIR}/sets/.image/${dir}"
+        mkdir -p "${JINX_CACHE_DIR}/sets/.image/${dir}"
+    done
+
+    echo >"${JINX_CACHE_DIR}/sets/.image/etc/resolv.conf"
+    echo localhost >"${JINX_CACHE_DIR}/sets/.image/etc/hostname"
 
     run_in_container1 "$JINX_CACHE_DIR/sets/.image" /debootstrap/debootstrap --second-stage
 
@@ -1468,8 +1518,14 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
     sed 's/-lxml2/-lxml2 -llzma -lm/g' config.mk >config.mk.sed
     mv config.mk.sed config.mk
 
-    make -j${parallelism}
-    make install
+    if command -v gmake >/dev/null 2>&1; then
+        MAKE=gmake
+    else
+        MAKE=make
+    fi
+
+    ${MAKE} -j${parallelism}
+    ${MAKE} install
 
     cd ..
     rm -rf xbps-${XBPS_VERSION}*
