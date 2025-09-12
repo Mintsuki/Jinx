@@ -14,15 +14,16 @@ An example OS using Jinx is [Gloire](https://codeberg.org/Ironclad/Gloire).
 - POSIX compatible `/bin/sh`
 - awk
 - working cc (gcc or clang work)
-- curl
-- debootstrap
 - findutils (for `find` and `xargs`)
 - git
 - GNU make
 - grep
 - gzip
+- perl
 - pkg-config (or `pkgconf`)
 - tar
+- wget
+- zstd
 - procps or equivalent (for `free`)
 - util-linux or equivalent (for `unshare`)
 - `libarchive(-dev)`
