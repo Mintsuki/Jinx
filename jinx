@@ -68,6 +68,7 @@ cmd_help() {
     printf "\n   regenerate|regen   Regenerates patch for package(s) and re-runs prepare step"
     printf "\n   install            Installs package(s)"
     printf "\n   reinstall          Reinstalls package(s)"
+    printf "\n   dry-run            Prints all packages that need to be built in order (space separated)"
     printf "\n   rebuild-cache      Rebuilds Jinx cache"
     printf "\n\nexample: $0 update '*'\n"
 }
@@ -360,7 +361,7 @@ topo_sort_visit() {
     esac
     _global_visited="$_global_visited $1"
 
-    _deps=$(awk -F: -v node="$1" '$1 == node {print $2; exit}' "$_graph")
+    _deps=$(awk -F: -v node="$1" '$1 == node {print $2; exit}' "$_global_graph")
     for _dep in $_deps; do
         [ -n "$_dep" ] && topo_sort_visit "$_dep"
     done
@@ -371,13 +372,13 @@ topo_sort_visit() {
 
 topo_sort() {
     make_temp
-    _graph="${tmp}"
+    _global_graph="${tmp}"
     _global_visited=" "
     _global_result=""
 
-    printf '%s\n' "$1" > "$_graph"
+    printf '%s\n' "$1" > "$_global_graph"
 
-    awk -F: '{print $1}' "$_graph" | sort -u | {
+    awk -F: '{print $1}' "$_global_graph" | sort -u | {
         while read _node; do
             topo_sort_visit "$_node"
         done
@@ -410,6 +411,54 @@ ${dep}:$(include_recipe "${base_dir}/recipes/${dep}" && echo ${deps})"
     done
 
     topo_sort "${graph}"
+}
+
+get_hostdeps_builddeps() {
+    # Similar to get_builddeps, but for host recipes.
+    # Builds a topological ordering of host recipe dependencies.
+    hostpkg="$1"
+
+    include_recipe "${base_dir}/host-recipes/${hostpkg}"
+
+    make_temp
+    hostdeps_file="${tmp}"
+
+    get_hostdeps_file_for_topo
+
+    graph="${hostpkg}:${hostdeps} ${hostrundeps}"
+    if ! [ -z "${hostdeps}" ] || ! [ -z "${hostrundeps}" ]; then
+        graph=$(echo "${graph}" | sed 's/: /:/g')
+    fi
+
+    for hostdep in $(cat "${hostdeps_file}"); do
+        if ! [ -f "${base_dir}/host-recipes/${hostdep}" ]; then
+            die "$0: host dependency '${hostdep}' for host recipe '${hostpkg}' not found"
+        fi
+
+        graph="${graph}
+${hostdep}:$(include_recipe "${base_dir}/host-recipes/${hostdep}" && echo ${hostdeps} ${hostrundeps})"
+    done
+
+    topo_sort "${graph}"
+}
+
+get_hostdeps_file_for_topo() {
+    # Collects all host dependencies recursively for use in topological sort.
+    deps_to_do=""
+
+    for hostdep in ${hostdeps} ${hostrundeps}; do
+        if ! grep " ${hostdep} " "${hostdeps_file}" >/dev/null 2>&1; then
+            deps_to_do="${deps_to_do} ${hostdep}"
+            printf " ${hostdep} " >>"${hostdeps_file}"
+        fi
+    done
+
+    for hostdep in ${deps_to_do}; do
+        tracked_subshell '
+            include_recipe "${base_dir}"/host-recipes/${hostdep}
+            get_hostdeps_file_for_topo
+        '
+    done
 }
 
 get_builddeps_file() {
@@ -1365,6 +1414,181 @@ cmd_update() {
     done
 }
 
+get_deps_fast() {
+    # Fast dep extraction without sourcing the recipe file
+    # Outputs: space-separated deps and builddeps
+    recipe_file="$1"
+    deps_line="$(grep '^deps=' "$recipe_file" 2>/dev/null | head -1)"
+    builddeps_line="$(grep '^builddeps=' "$recipe_file" 2>/dev/null | head -1)"
+
+    # Extract values: deps="foo bar" -> foo bar
+    deps_line="${deps_line#deps=}"
+    builddeps_line="${builddeps_line#builddeps=}"
+
+    # Remove quotes if present
+    deps_line="${deps_line%\"}"
+    deps_line="${deps_line#\"}"
+    builddeps_line="${builddeps_line%\"}"
+    builddeps_line="${builddeps_line#\"}"
+
+    printf '%s' "${deps_line} ${builddeps_line}"
+}
+
+get_hostdeps_fast() {
+    # Fast host dep extraction without sourcing the recipe file
+    recipe_file="$1"
+    hostdeps_line="$(grep '^hostdeps=' "$recipe_file" 2>/dev/null | head -1)"
+    hostrundeps_line="$(grep '^hostrundeps=' "$recipe_file" 2>/dev/null | head -1)"
+
+    hostdeps_line="${hostdeps_line#hostdeps=}"
+    hostrundeps_line="${hostrundeps_line#hostrundeps=}"
+
+    hostdeps_line="${hostdeps_line%\"}"
+    hostdeps_line="${hostdeps_line#\"}"
+    hostrundeps_line="${hostrundeps_line%\"}"
+    hostrundeps_line="${hostrundeps_line#\"}"
+
+    printf '%s' "${hostdeps_line} ${hostrundeps_line}"
+}
+
+cmd_dry_run() {
+    # Print all packages that would be built (space separated), but only those
+    # that are not already built in the build cache. Host packages (prefixed 'host:')
+    # are mentioned inline just before the regular package that needs them,
+    # and only if they haven't been mentioned before.
+    if [ -z "$1" ]; then
+        set -- '*'
+    fi
+
+    # Expand all package patterns upfront
+    all_packages=""
+    for ppkg in "$@"; do
+        for pkg in $(eval '(' cd "'${base_dir}'"/recipes '&&' echo "${ppkg}" ')' ); do
+            all_packages="${all_packages} ${pkg}"
+        done
+    done
+
+    # Build a fast lookup table: package -> deps (without sourcing)
+    make_temp
+    pkg_deps_cache="${tmp}"
+    touch "${pkg_deps_cache}"
+
+    for pkg in ${all_packages}; do
+        fast_deps="$(get_deps_fast "${base_dir}/recipes/${pkg}")"
+        printf "%s:%s\n" "${pkg}" "${fast_deps}" >> "${pkg_deps_cache}"
+    done
+
+    # Recursively collect all transitive deps (without sourcing recipes)
+    make_temp
+    all_deps_cache="${tmp}"
+    touch "${all_deps_cache}"
+
+    collect_all_deps() {
+        pkg="$1"
+        if grep -q "^${pkg}$" "${all_deps_cache}" 2>/dev/null; then
+            return
+        fi
+        printf "%s\n" "${pkg}" >> "${all_deps_cache}"
+
+        deps="$(grep "^${pkg}:" "${pkg_deps_cache}" | cut -d: -f2-)"
+        for dep in ${deps}; do
+            if [ ! -z "${dep}" ]; then
+                collect_all_deps "${dep}"
+            fi
+        done
+    }
+
+    # Collect all deps for all packages
+    for pkg in ${all_packages}; do
+        collect_all_deps "${pkg}"
+    done
+
+    # Now check which ones are unbuilt
+    all_unbuilt=""
+    for dep in $(cat "${all_deps_cache}"); do
+        include_recipe "${base_dir}"/recipes/"${dep}"
+        if ! [ -z "${from_source}" ]; then
+            version=$(unset version && source_source_recipe ${from_source} && echo "$version")
+        fi
+        if ! [ -f "${build_dir}"/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps ]; then
+            all_unbuilt="${all_unbuilt} ${dep}"
+        fi
+    done
+
+    # Collect host deps for all unbuilt packages (fast)
+    make_temp
+    pkg_hostdeps_cache="${tmp}"
+    touch "${pkg_hostdeps_cache}"
+
+    all_hostdeps_unsorted=""
+    for pkg in ${all_unbuilt}; do
+        hostdeps="$(get_hostdeps_fast "${base_dir}/recipes/${pkg}")"
+        if ! [ -z "${hostdeps}" ]; then
+            printf "%s:%s\n" "${pkg}" "${hostdeps}" >> "${pkg_hostdeps_cache}"
+            all_hostdeps_unsorted="${all_hostdeps_unsorted} ${hostdeps}"
+        fi
+    done
+
+    # Topo sort host deps once
+    hostdeps_sorted=""
+    if ! [ -z "${all_hostdeps_unsorted}" ]; then
+        hostdeps_unique="$(printf '%s\n' ${all_hostdeps_unsorted} | awk '!seen[$0]++' | tr '\n' ' ')"
+        hostdeps_sorted="$(tracked_subshell '
+            for hostdep in '"${hostdeps_unique}"'; do
+                sorted_hostdeps="$(get_hostdeps_builddeps "${hostdep}")"
+                printf "%s\n" "${sorted_hostdeps}"
+            done | awk "!seen[\$0]++"
+        ')"
+    fi
+
+    # Build topologically sorted list of unbuilt deps
+    make_temp
+    topo_sorted_unbuilt="${tmp}"
+    make_temp
+    topo_graph="${tmp}"
+
+    # Build graph for topo sort
+    for dep in ${all_unbuilt}; do
+        deps_of_dep="$(grep "^${dep}:" "${pkg_deps_cache}" | cut -d: -f2-)"
+        # Only include deps that are also unbuilt
+        unbuilt_deps_of_dep=""
+        for d in ${deps_of_dep}; do
+            if printf ' %s ' "${all_unbuilt}" | grep -q " ${d} "; then
+                unbuilt_deps_of_dep="${unbuilt_deps_of_dep} ${d}"
+            fi
+        done
+        printf "%s:%s\n" "${dep}" "${unbuilt_deps_of_dep}" >> "${topo_graph}"
+    done
+
+    topo_sort_result="$(topo_sort "$(cat "${topo_graph}")")"
+
+    # Emit in topological order with host deps inline
+    pending_list=""
+    emitted_hostdeps=" "
+
+    for dep in ${topo_sort_result}; do
+        # Emit host deps for this package first
+        dep_hostdeps="$(grep "^${dep}:" "${pkg_hostdeps_cache}" 2>/dev/null | cut -d: -f2-)"
+        if ! [ -z "${dep_hostdeps}" ]; then
+            for hostdep in ${hostdeps_sorted}; do
+                if ! printf '%s' "${dep_hostdeps}" | grep -q " ${hostdep} "; then
+                    if ! printf '%s' "${emitted_hostdeps}" | grep -q " ${hostdep} "; then
+                        if ! [ -d "${build_dir}/host-pkgs/${hostdep}" ]; then
+                            pending_list="${pending_list} host:${hostdep}"
+                        fi
+                        emitted_hostdeps="${emitted_hostdeps}${hostdep} "
+                    fi
+                fi
+            done
+        fi
+        # Then emit the package itself
+        pending_list="${pending_list} ${dep}"
+    done
+
+    # Print packages preserving order, space separated, with global deduplication
+    printf '%s\n' ${pending_list} | awk '!seen[$0]++{printf "%s ", $0} END{print ""}'
+}
+
 cmd_regen() {
     for i in "$@"; do
         tracked_subshell 'do_regen "$i"'
@@ -1751,6 +1975,10 @@ case "$1" in
         ;;
     rebuild-cache)
         redo_first_use
+        ;;
+    dry-run)
+        shift 1
+        cmd_dry_run "$@"
         ;;
     *)
         die "$0: unknown command: $1"
