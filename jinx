@@ -1570,14 +1570,12 @@ cmd_dry_run() {
         # Emit host deps for this package first
         dep_hostdeps="$(grep "^${dep}:" "${pkg_hostdeps_cache}" 2>/dev/null | cut -d: -f2-)"
         if ! [ -z "${dep_hostdeps}" ]; then
-            for hostdep in ${hostdeps_sorted}; do
-                if ! printf '%s' "${dep_hostdeps}" | grep -q " ${hostdep} "; then
-                    if ! printf '%s' "${emitted_hostdeps}" | grep -q " ${hostdep} "; then
-                        if ! [ -d "${build_dir}/host-pkgs/${hostdep}" ]; then
-                            pending_list="${pending_list} host:${hostdep}"
-                        fi
-                        emitted_hostdeps="${emitted_hostdeps}${hostdep} "
+            for hostdep in ${dep_hostdeps}; do
+                if ! printf '%s' "${emitted_hostdeps}" | grep -q " ${hostdep} "; then
+                    if ! [ -d "${build_dir}/host-pkgs/${hostdep}" ]; then
+                        pending_list="${pending_list} host:${hostdep}"
                     fi
+                    emitted_hostdeps="${emitted_hostdeps}${hostdep} "
                 fi
             done
         fi
