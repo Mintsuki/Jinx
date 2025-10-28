@@ -137,7 +137,7 @@ script_dir="$(cd "${script_dir}" && pwd -P)"
 script="${script_dir}/${script_name}"
 
 in_container=false
-if [ "$script" = "/base_dir/jinx" ]; then
+if [ "$script" = "//jinx" ]; then
     in_container=true
 fi
 
@@ -620,6 +620,7 @@ run_in_container() {
     fi
 
     mkdir -p "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/build_dir"
+    touch "${imgroot}/jinx"
 
     container_pkgs_native_mount=""
     sysroot_native_mount=""
@@ -664,6 +665,7 @@ run_in_container() {
 
         mount -o ro --bind /etc/resolv.conf '${imgroot}/etc/resolv.conf'
 
+        mount -o ro --bind '${script}' '${imgroot}/jinx'
         mount ${container_base_dir_ro} --bind '${base_dir}' '${imgroot}/base_dir'
         mount --bind '${base_dir}/.jinx-cache/tmp' '${imgroot}/base_dir/.jinx-cache/tmp'
         mount --bind '${build_dir}' '${imgroot}/build_dir'
@@ -689,13 +691,13 @@ run_in_container() {
             JINX_PARALLELISM=${parallelism} \
             JINX_CONFIG_FILE=/base_dir/Jinxfile \
             JINX_SOURCE_DIR=/base_dir \
-            /bin/bash /base_dir/jinx \
+            /bin/bash /jinx \
             $(for arg in "$@"; do echo '"'"$(echo "${arg}" | sed 's/"/\\"/g')"'" \'; done)
             # keep this whitespace
         '
     "
 
-    rm -rf "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/build_dir"
+    rm -rf "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/build_dir" "${imgroot}/jinx"
 }
 
 destroy_container() {
