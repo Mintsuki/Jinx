@@ -501,6 +501,8 @@ run_in_container1() {
     run_in_cont1_root="$1"
     shift 1
 
+    cat /etc/resolv.conf >"${run_in_cont1_root}/etc/resolv.conf"
+
     unshare --user --map-root-user --mount --pid --fork -- sh -c "
         set -e
 
@@ -511,7 +513,6 @@ run_in_container1() {
         mount -t tmpfs tmpfs '${run_in_cont1_root}/tmp'
         mount -t tmpfs tmpfs '${run_in_cont1_root}/var/tmp'
 
-        mount -o ro --bind /etc/resolv.conf '${run_in_cont1_root}/etc/resolv.conf'
         mount --bind '${apt_cache}' '${run_in_cont1_root}/var/cache/apt/archives'
 
         env -i PATH="${PATH}" chroot '${run_in_cont1_root}' /bin/sh -c '
@@ -528,6 +529,8 @@ run_in_container1() {
             # keep this whitespace
         '
     "
+
+    rm "${run_in_cont1_root}/etc/resolv.conf"
 }
 
 check_duplicates() {
@@ -620,6 +623,7 @@ run_in_container() {
     fi
 
     mkdir -p "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/build_dir"
+    cat /etc/resolv.conf >"${imgroot}/etc/resolv.conf"
     touch "${imgroot}/jinx"
 
     container_pkgs_native_mount=""
@@ -663,8 +667,6 @@ run_in_container() {
         mount -t tmpfs tmpfs '${imgroot}/tmp'
         mount -t tmpfs tmpfs '${imgroot}/var/tmp'
 
-        mount -o ro --bind /etc/resolv.conf '${imgroot}/etc/resolv.conf'
-
         mount -o ro --bind '${script}' '${imgroot}/jinx'
         mount ${container_base_dir_ro} --bind '${base_dir}' '${imgroot}/base_dir'
         mount --bind '${base_dir}/.jinx-cache/tmp' '${imgroot}/base_dir/.jinx-cache/tmp'
@@ -698,6 +700,7 @@ run_in_container() {
     "
 
     rm -rf "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/build_dir" "${imgroot}/jinx"
+    rm "${imgroot}/etc/resolv.conf"
 }
 
 destroy_container() {
@@ -1840,7 +1843,7 @@ EOF
         mkdir -p "${JINX_CACHE_DIR}/sets/.image/${dir}"
     done
 
-    echo >"${JINX_CACHE_DIR}/sets/.image/etc/resolv.conf"
+    rm "${JINX_CACHE_DIR}/sets/.image/etc/resolv.conf"
     echo localhost >"${JINX_CACHE_DIR}/sets/.image/etc/hostname"
 
     run_in_container1 "$JINX_CACHE_DIR/sets/.image" /debootstrap/debootstrap --second-stage
