@@ -511,7 +511,7 @@ run_in_container1() {
 
         mount --bind '${apt_cache}' '${run_in_cont1_root}/var/cache/apt/archives'
 
-        env -i PATH="${PATH}" chroot '${run_in_cont1_root}' /bin/sh -c '
+        env -i PATH='${PATH}' chroot '${run_in_cont1_root}' /bin/sh -c '
             set -e
 
             LD_PRELOAD=/nochown.so \
@@ -673,7 +673,7 @@ run_in_container() {
         ${shadow_git_dir_base}
         ${shadow_git_dir_build}
 
-        env -i PATH="${PATH}" chroot '${imgroot}' /bin/sh -c '
+        env -i PATH='${PATH}' chroot '${imgroot}' /bin/sh -c '
             set -e
 
             cd /build_dir
