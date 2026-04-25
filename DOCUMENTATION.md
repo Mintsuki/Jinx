@@ -344,7 +344,7 @@ from_source="test" # Assuming there is a source-recipes/test recipe.
 Specifies a URL from which to download a tarball, to use a source for this recipe. A checksum will be used to verify whether the source is valid or not, and only then extract the source.
 
 >[!warning]
->A method of checksum validation **must** be specified. This can be done by specifying a checksum in either the [`tarball_blake2b`](<#tarball_blake2b>), [`tarball_sha256`](<#tarball_sha256>), or [`tarball_sha512`](<#tarball_sha512>) property.
+>A method of checksum validation **must** be specified. This can be done by specifying a checksum in either the [`tarball_blake2b`](<#tarball_blake2b>), [`tarball_sha256`](<#tarball_sha256>), or [`tarball_sha512`](<#tarball_sha512>) property. You can set the value of a checksum variable to `"?"` to have Jinx automatically fill it in for you when it downloads the tarball.
 
 >[!tip]
 >The [`version`](<#version>) property can be embedded within this property for the sake of convenience.
