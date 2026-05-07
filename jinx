@@ -1122,6 +1122,7 @@ clean_sources() {
     force_remove "${base_dir}"/sources/$1.version
     force_remove "${base_dir}"/sources/$1.patched
     force_remove "${base_dir}"/sources/$1.prepared
+    force_remove "${base_dir}"/sources/$1.built
 }
 
 need_repatch() {
@@ -1300,12 +1301,15 @@ do_pkg() {
 
     if ! [ -f "${build_dir}"/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps ]; then
         force_remove "${build_dir}"/builds/"$1"
-        tracked_subshell '
-        if ! [ -z "${from_source}" ]; then
-            name=$(unset name && source_source_recipe ${from_source} && echo "${name}")
+        if [ -f "${base_dir}"/sources/$1.built ] && \
+           ! [ "$(cat "${base_dir}"/sources/$1.built)" = "${version}_${revision}" ]; then
+            tracked_subshell '
+            if ! [ -z "${from_source}" ]; then
+                name=$(unset name && source_source_recipe ${from_source} && echo "${name}")
+            fi
+            clean_sources "${name}"
+            '
         fi
-        clean_sources "${name}"
-        '
     fi
 
     if ! [ -z "${from_source}" ]; then
@@ -1313,6 +1317,8 @@ do_pkg() {
     else
         tracked_subshell 'do_source "${name}"'
     fi
+
+    echo "${version}_${revision}" >"${base_dir}"/sources/$1.built
 
     prepare_container
 
