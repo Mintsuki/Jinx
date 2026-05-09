@@ -14,6 +14,7 @@ An example OS using Jinx is [Gloire](https://codeberg.org/Ironclad/Gloire).
 - POSIX compatible `/bin/sh`
 - awk
 - working cc (gcc or clang work)
+- curl
 - findutils (for `find` and `xargs`)
 - git
 - GNU make
@@ -21,6 +22,7 @@ An example OS using Jinx is [Gloire](https://codeberg.org/Ironclad/Gloire).
 - gzip
 - perl
 - pkg-config (or `pkgconf`)
+- sed
 - tar
 - wget
 - zstd
