@@ -48,7 +48,7 @@ Links to different points in this documentation:
 		- [`cross_compile`](<#cross_compile>)
 		- [`bootstrap_pkg`](<#bootstrap_pkg>)
 		- [`clean_workdirs`](<#clean_workdirs>)
-		- [`source_*`](<#source_*>)
+		- [`source_*`](<#source_>)
 	- [Functions](<#functions>)
 		- [`early_prepare()`](<#early_prepare>)
 		- [`prepare()`](<#prepare>)
@@ -782,7 +782,7 @@ The very first bit of recipe logic to run. `early_prepare()` is invoked **after*
 
 Use it for tasks that must run on a pristine, unpatched source tree. For example, downloading additional vendored sources that the project's own build scripts expect, or removing files that should not be patched.
 
-This function is run with the `source_*` dependencies (see [`source_*`](<#source_*>)) when the recipe is referenced as a source.
+This function is run with the `source_*` dependencies (see [`source_*`](<#source_>)) when the recipe is referenced as a source.
 
 Example:
 
