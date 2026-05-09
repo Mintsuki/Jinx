@@ -142,7 +142,7 @@ if [ "$script" = "//jinx" ]; then
 fi
 
 case "$1" in
-    install)
+    install|reinstall)
         ;;
     *)
         if [ "${in_container}" = "false" ] && [ "$(id -u)" = "0" ]; then
