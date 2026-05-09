@@ -752,10 +752,6 @@ Recipes may also provide `source_deps`, `source_imagedeps`, `source_hostdeps`, a
 
 This split is essential when source preparation needs different tools/network access than the actual build (for example, fetching submodules requires network and `git`, but the build itself does not).
 
-#### `repology_*` (removed)
-
-The `check-updates` command and its associated `skip_pkg_check`, `repology_id`, `repology_srcname`, and `repology_status` properties have been removed in favour of external tooling.
-
 ### Functions
 
 Within a Jinx recipe, the recipe may specify the logic for different stages of package building as named functions. Functions may reference the recipe's properties or globally defined variables and functions from the [`Jinxfile`](<#jinxfile>), following typical POSIX shell script syntax.
