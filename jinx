@@ -1301,14 +1301,10 @@ do_pkg() {
 
     if ! [ -f "${build_dir}"/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps ]; then
         force_remove "${build_dir}"/builds/"$1"
-        if [ -f "${base_dir}"/sources/$1.built ] && \
+        if [ -z "${from_source}" ] && \
+           [ -f "${base_dir}"/sources/$1.built ] && \
            ! [ "$(cat "${base_dir}"/sources/$1.built)" = "${version}_${revision}" ]; then
-            tracked_subshell '
-            if ! [ -z "${from_source}" ]; then
-                name=$(unset name && source_source_recipe ${from_source} && echo "${name}")
-            fi
-            clean_sources "${name}"
-            '
+            tracked_subshell 'clean_sources "${name}"'
         fi
     fi
 
