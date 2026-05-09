@@ -2,7 +2,7 @@
 
 ---
 
-Jinx is a "meta-build-system" designed for bootstrapping operating systems. Primarily used by hobby OSDev projects such as [Aero](https://github.com/Andy-Python-Programmer/aero), [Gloire](https://codeberg.org/Ironclad/Gloire), and [Vinix](https://github.com/vlang/vinix), to aid in the creation of an image distribution. Jinx utilises a lightweight Debian "container" to provide a consistent build environment on every host system.
+Jinx is a "meta-build-system" designed for bootstrapping operating systems. Primarily used by hobby OSDev projects such as [Gloire](https://codeberg.org/Ironclad/Gloire) to aid in the creation of an image distribution. Jinx utilises a lightweight Debian "container" to provide a consistent build environment on every host system.
 
 ## Table of Contents
 
