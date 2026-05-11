@@ -32,6 +32,7 @@ Links to different points in this documentation:
 		- [`revision`](<#revision>)
 		- [`source_dir`](<#source_dir>)
 		- [`from_source`](<#from_source>)
+		- [`from_host_source`](<#from_host_source>)
 		- [`tarball_url`](<#tarball_url>)
 		- [`tarball_blake2b`](<#tarball_blake2b>)
 		- [`tarball_sha256`](<#tarball_sha256>)
@@ -56,7 +57,6 @@ Links to different points in this documentation:
 		- [`build()`](<#build-1>)
 		- [`package()`](<#package>)
 	- [Host Recipes](<#host-recipes>)
-	- [Source Recipes](<#source-recipes>)
 	- [Patches](<#patches>)
 
 ## Acquisition
@@ -92,7 +92,7 @@ Download the `jinx` executable script from https://codeberg.org/mintsuki/jinx. E
 
 Jinx enforces **out-of-tree** builds. There are two distinct directories involved:
 
-1. The **source directory** holds the project's recipes, patches, and the `Jinxfile`.
+1. The **source directory** holds the project's recipes (each with their own patches) and the `Jinxfile`.
 2. The **build directory** is initialised by `jinx init` and is where build artifacts, packages, and the `.jinx-parameters` file live.
 
 A typical source directory looks as follows:
@@ -101,20 +101,22 @@ A typical source directory looks as follows:
 example-source/
 |-- Jinxfile
 |-- host-recipes/
-|-- patches/
-|-- recipes/
-\-- source-recipes/
+|   \-- <name>/
+|       |-- recipe
+|       \-- patches/  # optional
+\-- recipes/
+    \-- <name>/
+        |-- recipe
+        \-- patches/  # optional
 ```
 
 - `Jinxfile` -> Jinx configuration file. Place required version/snapshot variables, optional global variables and helper functions referenced by recipes here. See [Jinxfile](<#jinxfile>).
 
 - `host-recipes/` -> Recipes that produce results destined for usage on the host system. Typically for cross-compiler toolchain building. See [Host Recipes](<#host-recipes>).
 
-- `patches/` -> Contains patches to be applied to recipe sources. See [Patches](<#patches>).
+- `recipes/` -> Generic recipes for most purposes. Built inside the container, and may also act as a source provider for other recipes (host or non-host) through the [`from_source`](<#from_source>) property. See [Recipes](<#recipes>).
 
-- `recipes/` -> Generic recipes for most purposes. Will be handled exclusively within the container environment, however, they can act as sources for host recipes if referenced through the `from_source` property. See [Recipes](<#recipes>).
-
-- `source-recipes/` -> Recipes that only act to provide prepared sources for other recipes, to later be built. Referenced by the [`from_source`](<#from_source>) property within a recipe. See [Source Recipes](<#source-recipes>).
+Each recipe lives in its own directory under `recipes/` or `host-recipes/`. The directory contains a file named `recipe` (the shell-sourced recipe contents) and, optionally, a `patches/` subdirectory holding patches that should be applied to the recipe's sources. See [Patches](<#patches>).
 
 After running `jinx init`, the build directory has the following layout (some entries are created lazily as builds happen):
 
@@ -219,7 +221,7 @@ Same as `rebuild`, but for `host-recipes/`.
 
 - Alias: `regen`
 
-Regenerates `patches/<name>/jinx-working-patch.patch` from any in-place modifications made to `sources/<name>-workdir/`, then re-runs the [`prepare()`](<#prepare>) step. Use this when iterating on patches: edit the working copy, run `regen`, then `rebuild` the recipe.
+Regenerates `<dir>/<name>/patches/jinx-working-patch.patch` (where `<dir>` is `recipes` or `host-recipes`, whichever holds the recipe) from any in-place modifications made to `sources/<name>-workdir/`, then re-runs the [`prepare()`](<#prepare>) step. Use this when iterating on patches: edit the working copy, run `regen`, then `rebuild` the recipe. Only valid on source recipes (i.e. recipes that declare their own sources); attempting to `regen` a recipe that uses [`from_source`](<#from_source>) or [`from_host_source`](<#from_host_source>) is an error - regen the actual source recipe instead.
 
 #### `install`
 
@@ -363,13 +365,13 @@ Defined within the recipe, there are a number of properties that determine how J
 
 - **Required**.
 
-Basic property to define the name of the package that the recipe specifies. There is an expectation that the value of this property is equal to the file name of the recipe; the `name` property is used to find associated [Patches](<#patches>) and to identify the build/package directories for the recipe.
+Basic property to define the name of the package that the recipe specifies. There is an expectation that the value of this property is equal to the recipe's directory name (e.g. `recipes/<name>/recipe`); the `name` property is used to identify the build/package directories for the recipe and the source extraction in `sources/`.
 
 Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 name=test
 # ...
@@ -385,7 +387,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 version=2.4.0
@@ -402,7 +404,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 revision=1
@@ -423,7 +425,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 source_dir="test/"
@@ -437,7 +439,7 @@ source_dir="test/"
 >
 >```sh
 >#! /bin/sh
-># recipes/kernel
+># recipes/kernel/recipe
 >
 >name=kernel
 >version=0
@@ -449,23 +451,40 @@ source_dir="test/"
 #### `from_source`
 
 - **Optional**.
+- Mutually exclusive with [`from_host_source`](<#from_host_source>).
 
-Specifies another recipe to draw from for build sources. This can be a specialised source recipe in `source-recipes/`, or a normal recipe in `recipes/`.
+Specifies another recipe in `recipes/` to draw build sources from. The referenced recipe provides the tarball/git URL, checksums, any [`early_prepare()`](<#early_prepare>)/[`prepare()`](<#prepare>) callbacks, and the `source_*` properties that govern the source-preparation environment. Patches likewise belong to the source recipe and are applied automatically - a consumer recipe that sets `from_source` is not permitted to have its own `patches/` directory.
 
->[!note]
->Jinx will prioritise a source recipe **over** a normal recipe when searching for a recipe specified by this property. This means a normal recipe of the same name as a source recipe can specify the latter in `from_source` without conflict.
+This works for both normal recipes (in `recipes/`) and host recipes (in `host-recipes/`): in either case, the lookup goes to `recipes/`.
 
->[!warning]
->Host recipes are **not** valid sources for the `from_source` property.
+When neither `from_source` nor `from_host_source` is set, a recipe provides its own source information inline - `tarball_url`, `git_url`, `source_dir`, etc., declared directly in the recipe itself.
 
 Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
-from_source="test" # Refers to source-recipes/test (or recipes/test as a fallback).
+from_source="test-shared-sources" # Refers to recipes/test-shared-sources.
+# ...
+```
+
+#### `from_host_source`
+
+- **Optional**.
+- Mutually exclusive with [`from_source`](<#from_source>).
+
+Like [`from_source`](<#from_source>) but resolves against `host-recipes/` instead of `recipes/`. Use this when several host recipes share a common source tree - point each of them at a single `host-recipes/<name>` that declares the tarball/git URL and `early_prepare()`/`prepare()` callbacks. As with `from_source`, the consumer recipe cannot carry its own `patches/` directory; patches live with the source.
+
+Example:
+
+```sh
+#! /bin/sh
+# host-recipes/bootstrap-gcc/recipe
+
+# ...
+from_host_source="gcc-host" # Refers to host-recipes/gcc-host.
 # ...
 ```
 
@@ -484,7 +503,7 @@ Specifies a URL to download a tarball from, to use as the source for this recipe
 >For example:
 >```sh
 >#! /bin/sh
-># recipes/xtrans
+># recipes/xtrans/recipe
 >
 >version=1.6.0
 >tarball_url="https://www.x.org/archive/individual/lib/xtrans-${version}.tar.gz"
@@ -501,7 +520,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/xtrans
+# recipes/xtrans/recipe
 
 # ...
 tarball_blake2b="446035fb78ec796c1534f36dc687b40fbe6227d47a623039314117a85cc4b3e37971934790932e46a6dc362de70dfb58ccd1fae43518461789ce8854e27adba8"
@@ -518,7 +537,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 tarball_sha256="97efeda496274082e4ed0edf641a7ce5559d4b030fd6b16547e2f13c6d9d00d5"
@@ -535,7 +554,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 tarball_sha512="172acc1bc70350b1f7e46063e98c4a5ce4dd3c245a7e7bd383d8fce4a44ea0d46057b55af0aa279cda1d4b1413e924377ccce9562cef9e83eb6e30fc136a383c"
@@ -552,7 +571,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# source-recipes/libgcc-binaries
+# recipes/libgcc-binaries/recipe
 
 # ...
 git_url="https://codeberg.org/osdev/libgcc-binaries.git"
@@ -570,7 +589,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# source-recipes/libgcc-binaries
+# recipes/libgcc-binaries/recipe
 
 # ...
 commit="28257019ce04f784337cb9c3125abb4d02cef14d"
@@ -588,7 +607,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# source-recipes/test
+# recipes/test/recipe
 
 # ...
 git_url="https://example.com/test.git"
@@ -610,7 +629,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 deps="thing1 thing2"
@@ -630,7 +649,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 builddeps="autoconf gettext-host"
@@ -648,7 +667,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 hostdeps="gcc binutils"
@@ -666,7 +685,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# host-recipes/automake
+# host-recipes/automake/recipe
 
 # ...
 hostdeps="autoconf"
@@ -687,7 +706,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 imagedeps="build-essential patchelf"
@@ -708,7 +727,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 allow_network=yes
@@ -728,7 +747,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# host-recipes/gcc
+# host-recipes/gcc/recipe
 
 # ...
 cross_compile=yes
@@ -746,7 +765,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/mlibc-headers
+# recipes/mlibc-headers/recipe
 
 # ...
 bootstrap_pkg=yes
@@ -764,7 +783,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/kernel
+# recipes/kernel/recipe
 
 # ...
 clean_workdirs=no
@@ -797,7 +816,7 @@ flowchart LR
 ```
 
 > [!note]
->No function is technically ***required*** to exist for a build to succeed; however, without functionality, the recipe does nothing. This is normal for [Source Recipes](<#source-recipes>) that only declare a download URL and rely on the consuming recipe to do the actual work.
+>No function is technically ***required*** to exist for a build to succeed; however, without functionality, the recipe does nothing. This is normal for recipes that exist purely to provide sources for another recipe (referenced via [`from_source`](<#from_source>)) - they only declare a download URL and rely on the consuming recipe to do the actual work.
 
 > [!warning]
 > Aside from [`early_prepare()`](<#early_prepare>) and [`prepare()`](<#prepare>), these functions all run within the **build directory** for the recipe. The build directory does not contain the sources by default, so reference the source directory through the `source_dir` variable that Jinx sets during these stages, e.g. `${source_dir}/configure`. It is recommended that only the `early_prepare()` and `prepare()` steps modify the source directory.
@@ -814,7 +833,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# source-recipes/gcc
+# recipes/gcc/recipe
 
 # ...
 source_allow_network=yes
@@ -835,7 +854,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# source-recipes/test
+# recipes/test/recipe
 
 # ...
 source_imagedeps="autoconf-archive"
@@ -853,7 +872,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 configure() {
@@ -876,7 +895,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 build() {
@@ -896,7 +915,7 @@ Example:
 
 ```sh
 #! /bin/sh
-# recipes/test
+# recipes/test/recipe
 
 # ...
 package() {
@@ -915,7 +934,7 @@ package() {
 
 Located in `host-recipes/`, host recipes describe packages that should be built for the host system, as opposed to the target system. The recipes are still built within the container. Host recipes are valuable for building cross-compiler toolchains, code generators, and other tools used during the build of normal recipes.
 
-Host recipes can **not** themselves be used in `from_source`, but they can refer to a normal recipe or source recipe through `from_source`.
+Host recipes can declare their own sources inline (`tarball_url`, `git_url`, `source_dir`, `early_prepare()`, `prepare()`, `source_*` properties, etc.), exactly the same way normal recipes do. Alternatively, they can pull sources from another recipe via [`from_source`](<#from_source>) (resolving against `recipes/`) or [`from_host_source`](<#from_host_source>) (resolving against `host-recipes/`, useful when several host recipes need to share a single source tree).
 
 >[!warning]
 >Linking against dynamic shared libraries *may* have unexpected behaviour when the resulting binary is run from the host: it could try to load a library that is not installed on the host. Static linking, or relying solely on libraries provided by `imagedeps`, is the safer route.
@@ -923,21 +942,17 @@ Host recipes can **not** themselves be used in `from_source`, but they can refer
 >[!note]
 >Outputs from host recipes end up in `host-pkgs/<name>/` (relative to the build directory) and can be run from there. For example: `./host-pkgs/limine/usr/local/bin/limine bios-install testos.iso`.
 
-### Source Recipes
-
-Located in `source-recipes/`, source recipes are not built as recipes themselves. They exist to provide sources (and optionally an [`early_prepare()`](<#early_prepare>)/[`prepare()`](<#prepare>) stage) for other recipes. This type of recipe is prioritised over normal recipes when searching for a matching recipe in a [`from_source`](<#from_source>) property.
-
-Source recipes commonly carry `git_url`/`commit` or `tarball_url`/`tarball_*` properties along with build-environment requirements like `imagedeps` and `hostdeps`.
-
 ### Patches
 
-Jinx provides a fairly reasonable way to patch existing software sources for the needs of the target system. For each recipe that wants its sources patched, place patch files under `patches/<name>/`, where `<name>` matches the recipe's [`name`](<#name>) property (or, when a normal recipe consumes a source recipe via [`from_source`](<#from_source>), the source recipe's `name`).
+Jinx provides a fairly reasonable way to patch existing software sources for the needs of the target system. Patches live next to the recipe that owns the source: place patch files under `<dir>/<name>/patches/`, where `<dir>` is `recipes/` or `host-recipes/` (whichever holds the recipe) and `<name>` matches the recipe's directory name.
+
+Patches always belong to the **source recipe** - i.e. the recipe that declares the actual `tarball_url`/`git_url`/`source_dir`. Consumer recipes that pull sources via [`from_source`](<#from_source>) or [`from_host_source`](<#from_host_source>) **cannot have their own `patches/`** directory; attempting to do so is a hard error. If you need a patch, add it to the source recipe's `patches/` (where it applies to every consumer that shares the source).
 
 Patches are applied in this order:
 
-1. All files in `patches/<name>/` other than `jinx-working-patch.patch`, in the order returned by shell glob expansion (lexicographic).
+1. All files in `<dir>/<name>/patches/` other than `jinx-working-patch.patch`, in the order returned by shell glob expansion (lexicographic).
 2. A snapshot of the source tree is then saved as `sources/<name>-clean/` (the "clean reference" used by [`regenerate`](<#regenerate>) to compute the working patch).
-3. `patches/<name>/jinx-working-patch.patch` is applied last, if present.
+3. `<dir>/<name>/patches/jinx-working-patch.patch` is applied last, if present.
 
 Steps 1 and 3 happen *before* the [`prepare()`](<#prepare>) stage but *after* [`early_prepare()`](<#early_prepare>).
 
@@ -945,16 +960,16 @@ Steps 1 and 3 happen *before* the [`prepare()`](<#prepare>) stage but *after* [`
 >The intended workflow is:
 >1. Run `jinx update <recipe>` once to pull and prepare sources.
 >2. Edit `sources/<recipe>-workdir/` directly to iterate on changes.
->3. Run `jinx regen <recipe>` to fold those edits into `patches/<recipe>/jinx-working-patch.patch`.
+>3. Run `jinx regen <recipe>` to fold those edits into `<dir>/<recipe>/patches/jinx-working-patch.patch`.
 >4. Run `jinx rebuild <recipe>` to verify.
 >
->Static patches that you don't want `regen` to fold into can be dropped into `patches/<recipe>/` under any name other than `jinx-working-patch.patch`.
+>Static patches that you don't want `regen` to fold into can be dropped into `<dir>/<recipe>/patches/` under any name other than `jinx-working-patch.patch`.
 
 >[!tip]
 >If you'd rather author patches outside Jinx's `regen` workflow, the standard `diff` command works:
 >
 >```sh
->diff -urN --no-dereference binutils/ binutils-modified/ > patches/binutils/0001-my-change.patch
+>diff -urN --no-dereference binutils/ binutils-modified/ > recipes/binutils/patches/0001-my-change.patch
 >```
 >
 >Here, `binutils/` is the original, unmodified version of the source, and `binutils-modified/` contains the changes you want to turn into a patch.
