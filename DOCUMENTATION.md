@@ -18,11 +18,11 @@ Links to different points in this documentation:
 	- [`host-rebuild`](<#host-rebuild>)
 	- [`regenerate`](<#regenerate>)
 	- [`install`](<#install>)
-	- [`reinstall`](<#reinstall>)
 	- [`dry-run`](<#dry-run>)
 	- [`download`](<#download>)
 	- [`run-in`](<#run-in>)
 	- [`rebuild-cache`](<#rebuild-cache>)
+- [Rebuild Behavior](<#rebuild-behavior>)
 - [Jinxfile](<#jinxfile>)
 - [Environment Variables](<#environment-variables>)
 - [Recipes](<#recipes>)
@@ -62,7 +62,8 @@ Links to different points in this documentation:
 ## Acquisition
 
 Ensure the following prerequisites have been acquired:
-- A POSIX-compatible shell located at `/bin/sh`.
+- `bash` (the `jinx` script itself is written in bash).
+- A POSIX-compatible shell located at `/bin/sh` (used by Jinx internally to drive `unshare`/`chroot` and to bootstrap the container environment).
 - `awk`.
 - LLVM Clang, or the GNU C Compiler.
 - `curl`.
@@ -156,8 +157,7 @@ usage: jinx <command> <package(s)>
    host-build         Same as build, but for host package(s)
    host-rebuild       Same as rebuild, but for host package(s)
    regenerate|regen   Regenerates patch for package(s) and re-runs prepare step
-   install            Installs package(s)
-   reinstall          Reinstalls package(s)
+   install            Installs package(s) (use '-f' to reinstall)
    dry-run            Prints all packages that need to be built in order (space separated)
    download           Downloads pre-built package(s) from remote repo
    run-in             Runs a command in a container prepared with a recipe's hostdeps
@@ -167,7 +167,7 @@ example: jinx update '*'
 ```
 
 >[!tip]
->An argument of `'*'` (or any shell glob) can be used in place of recipe names to expand to every matching recipe. This is great for "full" distributions.
+>For most commands, an argument of `'*'` (or any shell glob) can be used in place of recipe names; Jinx expands it against the relevant recipes directory. This is great for "full" distributions. Exceptions: [`regenerate`](<#regenerate>) and [`run-in`](<#run-in>) take recipe names verbatim and do not perform glob expansion.
 
 #### `init`
 
@@ -229,17 +229,13 @@ jinx install [-f] <sysroot> <package(s)>
 
 Installs the specified package(s) into the given system root directory. Each package is built first if it has not been built yet (unless Jinx is invoked as root, in which case it errors out instead of attempting a build).
 
-The `-f` flag **forces** the installation, removing any pre-existing version of the package from the sysroot beforehand. After installation, Jinx checks for file conflicts between packages and reports duplicates.
+The `-f` flag **forces** the installation, removing any pre-existing version of the package from the sysroot beforehand. After installation, Jinx checks for file conflicts between the installed packages; if any duplicate paths are detected, it lists them and exits with an error.
 
 >[!note]
->The `install` and `reinstall` commands are the only commands allowed to run as root, since populating a sysroot may require root privileges depending on file ownership/permissions.
+>`install` is the only command allowed to run as root, since populating a sysroot may require root privileges depending on file ownership/permissions.
 
 >[!warning]
 >The `install` command requires a "sysroot" directory as the first positional argument before the package list. Example: `jinx install sysroot/ base`.
-
-#### `reinstall`
-
-Equivalent to `jinx install -f`, kept as a top-level command for convenience.
 
 #### `dry-run`
 
@@ -271,9 +267,43 @@ Useful for interactive debugging of build failures, running utilities against a 
 
 Purges and re-creates `.jinx-cache/`. This re-downloads XBPS, re-runs `debootstrap`, and rebuilds the base container image. Run this if the cache becomes corrupt; otherwise, Jinx automatically refreshes the cache when its version, the Debian snapshot, or the base packages list change.
 
+## Rebuild Behavior
+
+Jinx identifies built packages purely by their XBPS filename, `<name>-<version>_<revision>.<arch>.xbps`. When this file is present in the build directory's `pkgs/`, the recipe is considered already built; when it is missing (because `version` was bumped, `revision` was bumped, or the file was deleted), Jinx rebuilds the recipe.
+
+### What triggers a rebuild
+
+A recipe is rebuilt under any of these conditions:
+
+1. You explicitly run [`build`](<#build>) or [`rebuild`](<#rebuild>) on it. `build` always re-runs the recipe's `build()` + `package()` stages (skipping `configure()` if the build directory still exists from a previous run); `rebuild` additionally removes the build directory first so `configure()` reruns from scratch.
+2. You run [`update`](<#update>) (or `update '*'`) and the recipe's current `name-version_revision.xbps` is missing.
+3. The recipe's `version` or `revision` changed since it was last built. The expected XBPS filename no longer matches any existing artifact, so the file appears "missing" - `update` will then rebuild it, and `do_pkg`'s internal `.built` marker mismatch will additionally clean the unpacked source tree, forcing a fresh fetch/patch/prepare for the next build.
+
+### Dependency walking
+
+All build-driving commands walk **downward** through the dependency tree, rebuilding anything whose XBPS file (or, for host deps, `host-pkgs/<pkg>/` directory) is missing along the way:
+
+- [`build <pkg>`](<#build>) / [`rebuild <pkg>`](<#rebuild>) iterate each direct dep and host-dep of `<pkg>`, recursing so that any missing artifact in the closure is rebuilt before `<pkg>` itself.
+- [`update <pkg>`](<#update>) performs the same walk, gated on `<pkg>` itself being missing; the walk uses one topological sort over `<pkg>`'s entire transitive closure.
+- [`dry-run`](<#dry-run>) performs the same walk in preview mode and prints what *would* be rebuilt, in build order.
+
+Topological sorting is required for correctness: before any recipe builds, every transitive dep of it must already have its XBPS file in `pkgs/`, because `do_pkg` uses `xbps-install` to populate the build sysroot. Sorting deps-first ensures that is always the case.
+
+### Reverse dependencies are *not* automatically rebuilt
+
+If you bump a library's `version` or `revision`, Jinx will rebuild that library, but **not** packages that depend on it. The dependents' XBPS files still exist with their original versions, so all the commands above (including `update '*'`) consider them already built. Jinx does not track which artifacts were built against which others.
+
+When a library's ABI/soname changes and its dependents need recompiling, the conventional workflow (matching xbps-src and PKGBUILD-style systems) is:
+
+1. Bump the affected library's `version` or `revision`.
+2. Bump `revision=` on every affected reverse-dependency recipe to mark them as needing a rebuild too.
+3. Run `jinx update '*'`. The topological sort will rebuild the library first, then each dependent in the right order.
+
+If you only do step 1, dependents keep their existing XBPS files until you delete them manually, run `jinx rebuild <dep>` for each, or bump their `revision`.
+
 ## Jinxfile
 
-When building **any** recipe, Jinx sources the `Jinxfile` from the source directory. Variables and functions defined within this file will be visible to recipes, allowing the definition of default compiler flags, helper functions, and so on. The `Jinxfile` is a shell script and follows POSIX shell syntax.
+When building **any** recipe, Jinx sources the `Jinxfile` from the source directory. Variables and functions defined within this file will be visible to recipes, allowing the definition of default compiler flags, helper functions, and so on. The `Jinxfile` is sourced by bash, so any valid bash syntax is accepted (POSIX shell syntax is a subset, so older POSIX-style Jinxfiles continue to work unchanged).
 
 A *bare minimum* `Jinxfile` is as follows:
 
@@ -327,7 +357,7 @@ In the Jinx build system, packages are specified by shell scripts called "recipe
 Defined within the recipe, there are a number of properties that determine how Jinx will handle building the recipe. The full list is below.
 
 >[!note]
->"Properties", as they are referred to in this documentation, are just POSIX shell variables that Jinx makes use of. Thus, any valid shell script syntax for defining these variables will be accepted.
+>"Properties", as they are referred to in this documentation, are just shell variables that Jinx makes use of. Recipes are sourced by bash, so any valid bash syntax for defining these variables will be accepted (POSIX shell syntax is a subset and continues to work unchanged).
 
 #### `name`
 
@@ -754,7 +784,7 @@ This split is essential when source preparation needs different tools/network ac
 
 ### Functions
 
-Within a Jinx recipe, the recipe may specify the logic for different stages of package building as named functions. Functions may reference the recipe's properties or globally defined variables and functions from the [`Jinxfile`](<#jinxfile>), following typical POSIX shell script syntax.
+Within a Jinx recipe, the recipe may specify the logic for different stages of package building as named functions. Functions may reference the recipe's properties or globally defined variables and functions from the [`Jinxfile`](<#jinxfile>), using bash syntax (POSIX shell syntax also works).
 
 ```mermaid
 flowchart LR
@@ -817,7 +847,7 @@ prepare() {
 
 #### `configure()`
 
-Following the [`prepare()`](<#prepare>) stage, `configure()` is intended for getting the sources ready for building. As the name suggests, the `configure()` stage is most suited to projects that require a `./configure` invocation before builds. This stage is **only** called the **first** time a recipe is built (or when it is rebuilt via [`rebuild`](<#rebuild>)).
+Following the [`prepare()`](<#prepare>) stage, `configure()` is intended for getting the sources ready for building. As the name suggests, the `configure()` stage is most suited to projects that require a `./configure` invocation before builds. This stage runs only when the recipe's build directory does not yet exist: on the first build, after [`rebuild`](<#rebuild>), after a `version` or `revision` bump (which causes the next build command to wipe the build directory before re-running), or after `JINX_CLEAN_WORKDIRS=yes` cleared it at the end of the previous build.
 
 Example:
 
