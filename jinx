@@ -1,4 +1,4 @@
-#!/bin/bash
+#! /usr/bin/env bash
 
 # Copyright (C) 2022-2026 Mintsuki
 
@@ -86,7 +86,7 @@ cmd_init() {
     fi
 
     cat <<EOF >.jinx-parameters
-#!/bin/bash
+#! /bin/sh
 
 JINX_SOURCE_DIR="${srcdir}"
 JINX_ARCH="$(uname -m)"
