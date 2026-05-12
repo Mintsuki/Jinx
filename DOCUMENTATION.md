@@ -146,7 +146,7 @@ example-source/
 A brief summary for each command can be found within the usage output of `jinx help`:
 
 ```
-usage: jinx <command> <package(s)>
+usage: jinx <command> [args...]
 
    help|--help        Displays this message
    version|--version  Prints the version
