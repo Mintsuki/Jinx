@@ -557,7 +557,7 @@ prepare_container() {
     make_temp -d
     container_pkgs="${tmp}"
     make_temp -d
-    sysroot_dir="${tmp}"
+    sysroot="${tmp}"
 
     make_temp
     local tmp_stdout="${tmp}"
@@ -567,12 +567,12 @@ prepare_container() {
     for dep in "${!_deps_collected[@]}"; do
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${JINX_ARCH}" \
-		xbps-install -y -r "${sysroot_dir}" -R "${build_dir}"/pkgs "${dep}" >"${tmp_stdout}" 2>"${tmp_stderr}" \
+		xbps-install -y -r "${sysroot}" -R "${build_dir}"/pkgs "${dep}" >"${tmp_stdout}" 2>"${tmp_stderr}" \
 	|| (echo "jinx: xbps-install failed! stdout:" && sed 's/^/\- /' "${tmp_stdout}" && echo jinx: stderr: && sed 's/^/\- /' "${tmp_stderr}" && exit 17)
     done
 
     if [[ $JINX_NATIVE_MODE == yes && -z $cross_compile ]]; then
-        imgroot="${sysroot_dir}"
+        imgroot="${sysroot}"
     else
         local hostdep
         for hostdep in "${!_hostdeps_collected[@]}"; do
@@ -639,7 +639,7 @@ run_in_container() {
         mkdir -p "${imgroot}/sysroot"
 
         local container_pkgs_native_mount="mount -o ro --bind '${container_pkgs}' '${imgroot}/usr/local'"
-        local sysroot_native_mount="mount -o ro --bind '${sysroot_dir}' '${imgroot}/sysroot'"
+        local sysroot_native_mount="mount -o ro --bind '${sysroot}' '${imgroot}/sysroot'"
 
         local run_in_cont_lang=en_US.UTF-8
     else
@@ -713,7 +713,7 @@ run_in_container() {
 }
 
 destroy_container() {
-    force_remove "${container_pkgs}" "${sysroot_dir}"
+    force_remove "${container_pkgs}" "${sysroot}"
 }
 
 do_git_fetch() {
@@ -874,7 +874,7 @@ do_fetch() {
 
     eval "$(get_real_source_dir)"
 
-    local sysroot_dir=/sysroot
+    local sysroot=/sysroot
 
     if [[ ${is_local_package} != true && ${is_sourceless_package} != true ]]; then
         if [[ -n ${git_url} ]]; then
@@ -951,7 +951,7 @@ do_prepare() {
 
     eval "$(get_real_source_dir)"
 
-    local sysroot_dir=/sysroot
+    local sysroot=/sysroot
 
     cd "${source_dir}"
     prepare
@@ -979,7 +979,7 @@ do_configure_host() {
     fi
 
     local prefix="/usr/local"
-    local sysroot_dir="/sysroot"
+    local sysroot="/sysroot"
 
     cd "${build_dir}"/host-builds/${name}
     configure
@@ -1007,7 +1007,7 @@ do_build_host() {
     fi
 
     local prefix="/usr/local"
-    local sysroot_dir="/sysroot"
+    local sysroot="/sysroot"
 
     cd "${build_dir}"/host-builds/${name}
     build
@@ -1038,7 +1038,7 @@ do_package_host() {
     fi
 
     local prefix="/usr/local"
-    local sysroot_dir="/sysroot"
+    local sysroot="/sysroot"
 
     mkdir -p "${dest_dir}${prefix}"
 
@@ -1072,7 +1072,7 @@ do_configure() {
     fi
 
     local prefix="/usr"
-    local sysroot_dir="/sysroot"
+    local sysroot="/sysroot"
 
     cd "${build_dir}"/builds/${name}
     configure
@@ -1100,7 +1100,7 @@ do_build() {
     fi
 
     local prefix="/usr"
-    local sysroot_dir="/sysroot"
+    local sysroot="/sysroot"
 
     cd "${build_dir}"/builds/${name}
     build
@@ -1131,7 +1131,7 @@ do_package() {
     fi
 
     local prefix="/usr"
-    local sysroot_dir="/sysroot"
+    local sysroot="/sysroot"
 
     mkdir -p "${dest_dir}${prefix}"
 
@@ -1161,7 +1161,7 @@ do_source() {
 
     local cross_compile=yes
     local container_pkgs=
-    local sysroot_dir=
+    local sysroot=
     local imgroot=
     local container_sources_ro=
     local container_base_dir_ro=
@@ -1273,7 +1273,7 @@ do_regen() {
 
     local cross_compile=yes
     local container_pkgs=
-    local sysroot_dir=
+    local sysroot=
     local imgroot=
     local container_sources_ro=
     local container_base_dir_ro=
@@ -1295,7 +1295,7 @@ do_host_pkg() {
 
     local cross_compile=yes
     local container_pkgs=
-    local sysroot_dir=
+    local sysroot=
     local imgroot=
     local container_base_dir_ro=
     prepare_container
@@ -1356,7 +1356,7 @@ do_pkg() {
     echo "${version}_${revision}" >"${base_dir}"/sources/$1.built
 
     local container_pkgs=
-    local sysroot_dir=
+    local sysroot=
     local imgroot=
     local container_base_dir_ro=
     prepare_container
@@ -1750,7 +1750,7 @@ do_run_in() {
     fi
 
     local prefix="/usr"
-    local sysroot_dir="/sysroot"
+    local sysroot="/sysroot"
 
     cd "${build_dir}"/builds/${name}
 
@@ -1799,7 +1799,7 @@ cmd_run_in() {
         local cmd_file_inner="/base_dir/.jinx-cache/tmp/$(basename "${cmd_file}")"
 
         local container_pkgs=
-        local sysroot_dir=
+        local sysroot=
         local imgroot=
         prepare_container
 

@@ -916,7 +916,7 @@ In addition to the recipe's own [Properties](<#properties>) and anything the [Ji
 | `recipe_dir` | Absolute path to the recipe's own directory (the one containing the `recipe` file and the optional `patches/` subdirectory). Useful for shipping additional files alongside the recipe and referencing them from `configure()`/`build()`/`package()`. |
 | `source_dir` | Path to the unpacked source tree (e.g. `/base_dir/sources/<name>` inside the container). |
 | `prefix` | Install prefix. `/usr` for normal recipes, `/usr/local` for host recipes. |
-| `sysroot_dir` | Path to the populated sysroot in the container (`/sysroot`). |
+| `sysroot` | Path to the populated sysroot in the container (`/sysroot`). |
 | `dest_dir` | Where `package()` should `make install` to. Jinx packs this into an XBPS file (normal recipes) or moves it under `host-pkgs/<name>/` (host recipes). |
 | `parallelism` | Suggested `make -j` value. From `JINX_PARALLELISM` or auto-detected. |
 | `base_dir` | The project's source directory. `/base_dir` inside the container; absolute host path outside. |
