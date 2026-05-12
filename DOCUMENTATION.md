@@ -200,9 +200,15 @@ Builds are **incremental**: the recipe's build directory is preserved across inv
 
 #### `update`
 
-Builds the specified package(s) and their transitive host/normal dependencies, but **only** when the corresponding XBPS package file is missing (for normal deps) or when the host package directory is missing (for host deps). Other recipes are skipped. This is the typical command to use during incremental development.
+```sh
+jinx update [-b] [package(s)...]
+```
 
-If invoked with no arguments, behaves as `update '*'`.
+Rebuilds the specified package(s) when they are **out of date**. A package is considered out of date when an XBPS file matching its `name` already exists in `pkgs/` but the filename does not match the recipe's current `version_revision`. Packages that have never been built are *skipped* by default - `update` is for keeping an existing set of built packages in sync with the recipes, not for introducing new ones.
+
+The `-b` flag (mnemonic: "build") restores the older behavior: never-built packages are also built. Transitive dependencies needed to satisfy an outdated target are always built regardless of `-b`, since the target's build would otherwise fail.
+
+If invoked with no recipe arguments (other than `-b`), behaves as `update [-b] '*'`.
 
 #### `rebuild`
 

@@ -69,7 +69,7 @@ cmd_help() {
     printf "\n   version|--version  Prints the version"
     printf "\n   init               Initialises a build directory"
     printf "\n   build              Builds package(s), does incremental builds"
-    printf "\n   update             Update package(s) and their dependencies if necessary"
+    printf "\n   update             Rebuild outdated package(s); use '-b' to also build never-built ones"
     printf "\n   rebuild            Rebuilds package(s)"
     printf "\n   regenerate|regen   Regenerates patch for package(s) and re-runs prepare step"
     printf "\n   install            Installs package(s) (use '-f' to reinstall)"
@@ -334,7 +334,7 @@ build_deps() {
         [[ -f "${base_dir}/recipes/${dep}/recipe" ]] || die "missing dependency '${dep}' for recipe '${name}'"
 
         tracked_subshell '
-            do_update ${dep}
+            do_update yes ${dep}
         '
     done
 }
@@ -1455,29 +1455,44 @@ do_host_build_if_needed() {
 }
 
 do_update() {
+    local with_build="$1"
+    shift
     eval "$(include_recipe "${base_dir}"/recipes/$1)"
     if [[ -n ${from_source} ]]; then
         local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
     fi
 
-    if [[ ! -f "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" ]]; then
-        local -A _hostdeps_collected
-
-        get_hostdeps_file
-
-        local hostdep
-        for hostdep in "${!_hostdeps_collected[@]}"; do
-            tracked_subshell 'do_host_build_if_needed "${hostdep}"'
-        done
-        local builddeps_var="$(tracked_subshell 'get_builddeps "${name}"')"
-        local dep
-        for dep in ${builddeps_var}; do
-            tracked_subshell 'do_build_if_needed "${dep}"'
-        done
+    # Up to date already? Nothing to do.
+    if [[ -f "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" ]]; then
+        return 0
     fi
+
+    # Not previously built? Skip unless caller asked to build missing ones.
+    if [[ ${with_build} != yes ]] && ! compgen -G "${build_dir}/pkgs/${name}-*_*.${JINX_ARCH}.xbps" >/dev/null; then
+        return 0
+    fi
+
+    local -A _hostdeps_collected
+
+    get_hostdeps_file
+
+    local hostdep
+    for hostdep in "${!_hostdeps_collected[@]}"; do
+        tracked_subshell 'do_host_build_if_needed "${hostdep}"'
+    done
+    local builddeps_var="$(tracked_subshell 'get_builddeps "${name}"')"
+    local dep
+    for dep in ${builddeps_var}; do
+        tracked_subshell 'do_build_if_needed "${dep}"'
+    done
 }
 
 cmd_update() {
+    local with_build=no
+    if [[ ${1-} == "-b" ]]; then
+        local with_build=yes
+        shift 1
+    fi
     if [[ -z ${1-} ]]; then
         set -- '*'
     fi
@@ -1486,7 +1501,7 @@ cmd_update() {
     for ppkg in "$@"; do
         local pkg
         for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
-            tracked_subshell 'do_update "${pkg}"'
+            tracked_subshell 'do_update "${with_build}" "${pkg}"'
         done
     done
 }
