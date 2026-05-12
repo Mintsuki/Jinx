@@ -209,7 +209,7 @@ if [[ ${in_container} == false ]]; then
     fi
     export LD_LIBRARY_PATH="${JINX_CACHE_DIR}/xbps/lib${LD_LIBRARY_PATH}"
 
-    mkdir -p "${base_dir}/sources" "${build_dir}/host-builds" "${build_dir}/host-pkgs" "${build_dir}/builds" "${build_dir}/pkgs"
+    mkdir -p "${base_dir}/sources" "${base_dir}/host-sources" "${build_dir}/host-builds" "${build_dir}/host-pkgs" "${build_dir}/builds" "${build_dir}/pkgs"
 fi
 
 apt_cache="$JINX_CACHE_DIR/apt-cache"
@@ -310,6 +310,7 @@ if [[ -n ${from_host_source} ]]; then
 elif [[ -n ${from_source} ]]; then
     local _from_source_dir=recipes
 fi
+local _sources_root=${_from_source_dir/recipes/sources}
 
 if [[ -n ${from_source} && -d ${recipe_dir}/patches ]]; then
     die "$0: recipe '${name}' uses from_source/from_host_source and cannot have its own patches/ directory (patches live with the source recipe)"
@@ -629,7 +630,7 @@ run_in_container() {
         local run_in_cont_colorterm="COLORTERM=\"$COLORTERM\""
     fi
 
-    mkdir -p "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/build_dir"
+    mkdir -p "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/host-sources" "${imgroot}/build_dir"
     cat /etc/resolv.conf >"${imgroot}/etc/resolv.conf"
     touch "${imgroot}/jinx"
 
@@ -681,6 +682,7 @@ run_in_container() {
         mount --bind '${base_dir}/.jinx-cache/tmp' '${imgroot}/base_dir/.jinx-cache/tmp'
         mount --bind '${build_dir}' '${imgroot}/build_dir'
         mount ${container_sources_ro} --bind '${base_dir}/sources' '${imgroot}/base_dir/sources'
+        mount ${container_sources_ro} --bind '${base_dir}/host-sources' '${imgroot}/base_dir/host-sources'
         ${container_pkgs_native_mount}
         ${sysroot_native_mount}
         ${shadow_git_dir_base}
@@ -708,7 +710,7 @@ run_in_container() {
         '
     "
 
-    force_remove "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/build_dir" "${imgroot}/jinx"
+    force_remove "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/host-sources" "${imgroot}/build_dir" "${imgroot}/jinx"
     rm "${imgroot}/etc/resolv.conf"
 }
 
@@ -726,15 +728,15 @@ do_git_fetch() {
     fi
 
     if [[ ${shallow} == no ]]; then
-        git clone "${git_url}" "${base_dir}"/sources/${name}
-        git -C "${base_dir}"/sources/${name} -c advice.detachedHead=false checkout "${commit}"
+        git clone "${git_url}" "${base_dir}"/${_sources_root}/${name}
+        git -C "${base_dir}"/${_sources_root}/${name} -c advice.detachedHead=false checkout "${commit}"
     else
-        git clone "${git_url}" -c advice.detachedHead=false --revision="${commit}" --depth=1 "${base_dir}"/sources/${name}
+        git clone "${git_url}" -c advice.detachedHead=false --revision="${commit}" --depth=1 "${base_dir}"/${_sources_root}/${name}
     fi
 }
 
 do_tarball_fetch() {
-    local tarball_path="${base_dir}/sources/$(basename "${tarball_url}")"
+    local tarball_path="${base_dir}/${_sources_root}/$(basename "${tarball_url}")"
 
     if [[ ! -f $tarball_path ]]; then
         make_temp
@@ -810,9 +812,9 @@ do_tarball_fetch() {
 
     ( cd "${extract_dir}" && tar -xf "${tarball_path}" )
 
-    mv "${extract_dir}"/* "${base_dir}"/sources/${name} >/dev/null 2>&1 || (
-        mkdir -p "${base_dir}"/sources/${name}
-        mv "${extract_dir}"/* "${base_dir}"/sources/${name}/
+    mv "${extract_dir}"/* "${base_dir}"/${_sources_root}/${name} >/dev/null 2>&1 || (
+        mkdir -p "${base_dir}"/${_sources_root}/${name}
+        mv "${extract_dir}"/* "${base_dir}"/${_sources_root}/${name}/
     )
 
     force_remove "${extract_dir}" "${tarball_path}"
@@ -836,7 +838,7 @@ EOF
         cat <<'EOF'
 local is_local_package=
 EOF
-        printf 'local source_dir=%q\n' "${base_dir}/sources/${name}"
+        printf 'local source_dir=%q\n' "${base_dir}/${_sources_root}/${name}"
     else
         local _real_path="${base_dir}/${source_dir}"
         if [[ ! -d ${_real_path} ]]; then
@@ -904,15 +906,15 @@ do_patch() {
 
     local _patches_dir="${base_dir}/${_from_source_dir}/${name}/patches"
     local needs_match_timestamps=no
-    force_remove "${base_dir}/sources/${name}-clean"
+    force_remove "${base_dir}/${_sources_root}/${name}-clean"
     if [[ -d ${_patches_dir} ]]; then
         local patch
         for patch in "${_patches_dir}"/*; do
             [[ ${patch} == "${_patches_dir}/*" ]] && break
             [[ ${patch} == "${_patches_dir}/jinx-working-patch.patch" ]] && continue
 
-            if [[ ! -d "${base_dir}/sources/${name}-clean" ]]; then
-                cp -rp "${source_dir}" "${base_dir}/sources/${name}-clean"
+            if [[ ! -d "${base_dir}/${_sources_root}/${name}-clean" ]]; then
+                cp -rp "${source_dir}" "${base_dir}/${_sources_root}/${name}-clean"
                 local needs_match_timestamps=yes
             fi
 
@@ -922,26 +924,26 @@ do_patch() {
         if [[ ${needs_match_timestamps} == yes ]]; then
             # make sure timestamps match
             local f
-            for f in $(diff -rq --no-dereference "${base_dir}/sources/${name}-clean" "${source_dir}" | sed '/^Only in/d;s/^Files //g;s/ and.*$//g'); do
-                touch --reference="$f" "${f//sources\/${name}-clean/sources\/${name}}"
+            for f in $(diff -rq --no-dereference "${base_dir}/${_sources_root}/${name}-clean" "${source_dir}" | sed '/^Only in/d;s/^Files //g;s/ and.*$//g'); do
+                touch --reference="$f" "${f//${_sources_root}\/${name}-clean/${_sources_root}\/${name}}"
             done
-            force_remove "${base_dir}/sources/${name}-clean"
+            force_remove "${base_dir}/${_sources_root}/${name}-clean"
         fi
     fi
 
-    cp -rp "${source_dir}" "${base_dir}/sources/${name}-clean"
+    cp -rp "${source_dir}" "${base_dir}/${_sources_root}/${name}-clean"
 
     if [[ -f "${_patches_dir}/jinx-working-patch.patch" ]]; then
         patch --no-backup-if-mismatch -p1 -r "${patch_trash}" < "${_patches_dir}/jinx-working-patch.patch"
 
         # make sure timestamps match
         local f
-        for f in $(diff -rq --no-dereference "${base_dir}"/sources/${name}-clean "${source_dir}" | sed '/^Only in/d;s/^Files //g;s/ and.*$//g'); do
-            touch --reference="$f" "${f//sources\/${name}-clean/sources\/${name}}"
+        for f in $(diff -rq --no-dereference "${base_dir}"/${_sources_root}/${name}-clean "${source_dir}" | sed '/^Only in/d;s/^Files //g;s/ and.*$//g'); do
+            touch --reference="$f" "${f//${_sources_root}\/${name}-clean/${_sources_root}\/${name}}"
         done
     fi
 
-    cp -rp "${source_dir}" "${base_dir}"/sources/${name}-workdir
+    cp -rp "${source_dir}" "${base_dir}"/${_sources_root}/${name}-workdir
 
     cd "${base_dir}"
 }
@@ -972,7 +974,7 @@ do_configure_host() {
         fi
 
         if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/sources/${from_source}
+            local source_dir="${base_dir}"/${_sources_root}/${from_source}
         else
             local source_dir="${base_dir}"/"${source_dir}"
         fi
@@ -1000,7 +1002,7 @@ do_build_host() {
         fi
 
         if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/sources/${from_source}
+            local source_dir="${base_dir}"/${_sources_root}/${from_source}
         else
             local source_dir="${base_dir}"/"${source_dir}"
         fi
@@ -1031,7 +1033,7 @@ do_package_host() {
         fi
 
         if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/sources/${from_source}
+            local source_dir="${base_dir}"/${_sources_root}/${from_source}
         else
             local source_dir="${base_dir}"/"${source_dir}"
         fi
@@ -1065,7 +1067,7 @@ do_configure() {
         fi
 
         if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/sources/${from_source}
+            local source_dir="${base_dir}"/${_sources_root}/${from_source}
         else
             local source_dir="${base_dir}"/"${source_dir}"
         fi
@@ -1093,7 +1095,7 @@ do_build() {
         fi
 
         if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/sources/${from_source}
+            local source_dir="${base_dir}"/${_sources_root}/${from_source}
         else
             local source_dir="${base_dir}"/"${source_dir}"
         fi
@@ -1124,7 +1126,7 @@ do_package() {
         fi
 
         if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/sources/${from_source}
+            local source_dir="${base_dir}"/${_sources_root}/${from_source}
         else
             local source_dir="${base_dir}"/"${source_dir}"
         fi
@@ -1145,13 +1147,13 @@ do_package() {
 }
 
 clean_sources() {
-    force_remove "${base_dir}"/sources/$1
-    force_remove "${base_dir}"/sources/$1-clean
-    force_remove "${base_dir}"/sources/$1-workdir
-    force_remove "${base_dir}"/sources/$1.version
-    force_remove "${base_dir}"/sources/$1.patched
-    force_remove "${base_dir}"/sources/$1.prepared
-    force_remove "${base_dir}"/sources/$1.built
+    force_remove "${base_dir}"/${_sources_root}/$1
+    force_remove "${base_dir}"/${_sources_root}/$1-clean
+    force_remove "${base_dir}"/${_sources_root}/$1-workdir
+    force_remove "${base_dir}"/${_sources_root}/$1.version
+    force_remove "${base_dir}"/${_sources_root}/$1.patched
+    force_remove "${base_dir}"/${_sources_root}/$1.prepared
+    force_remove "${base_dir}"/${_sources_root}/$1.built
 }
 
 do_source() {
@@ -1167,7 +1169,7 @@ do_source() {
     local container_base_dir_ro=
     prepare_container
 
-    if [[ ! -f "${base_dir}/sources/$1.version" || $(cat "${base_dir}/sources/$1.version") != "${version}" ]]; then
+    if [[ ! -f "${base_dir}/${_sources_root}/$1.version" || $(cat "${base_dir}/${_sources_root}/$1.version") != "${version}" ]]; then
         tracked_subshell '
             local allow_network=yes
             local container_base_dir_ro=
@@ -1178,28 +1180,28 @@ do_source() {
                 || [[ -n ${tarball_blake2b} && ${tarball_blake2b} == "?" ]] \
                 || local container_base_dir_ro="-o ro"
             run_in_container internal-fetch '$1' '$2'
-            echo "${version}" >"${base_dir}"/sources/'$1'.version
+            echo "${version}" >"${base_dir}"/${_sources_root}/'$1'.version
         '
     fi
 
-    if [[ ! -f "${base_dir}/sources/$1.patched" ]]; then
+    if [[ ! -f "${base_dir}/${_sources_root}/$1.patched" ]]; then
         tracked_subshell '
             if [[ ${is_local_package} != true && ${is_sourceless_package} != true ]]; then
                 local allow_network=yes
                 run_in_container internal-patch '$1' '$2'
             fi
-            touch "${base_dir}"/sources/'$1'.patched
+            touch "${base_dir}"/${_sources_root}/'$1'.patched
         '
     fi
 
-    if [[ ! -f "${base_dir}/sources/$1.prepared" ]]; then
+    if [[ ! -f "${base_dir}/${_sources_root}/$1.prepared" ]]; then
         tracked_subshell '
             local container_base_dir_ro=
             if [[ ${is_sourceless_package} != true ]]; then
                 [[ ${is_local_package} == true ]] || local container_base_dir_ro="-o ro"
                 run_in_container internal-prepare '$1' '$2'
             fi
-            touch "${base_dir}"/sources/'$1'.prepared
+            touch "${base_dir}"/${_sources_root}/'$1'.prepared
         '
     fi
 
@@ -1228,7 +1230,7 @@ do_regen() {
             die "$0: recipe '$1' uses from_source/from_host_source; regen its source with: $0 regen ${from_source}"
         fi
     fi
-    [[ -f "${base_dir}/sources/$1.patched" ]] || die "cannot regenerate non-built package"
+    [[ -f "${base_dir}/${_sources_root}/$1.patched" ]] || die "cannot regenerate non-built package"
 
     eval "$(get_real_source_dir)"
 
@@ -1236,7 +1238,7 @@ do_regen() {
     local patch_file="${tmp}"
 
     if [[ ${is_local_package} != true ]]; then
-        cd "${base_dir}"/sources
+        cd "${base_dir}/${_sources_root}"
 
         # exclude version control dirs
         make_temp -d
@@ -1266,10 +1268,10 @@ do_regen() {
         cd "${base_dir}"
 
         force_remove "${source_dir}"
-        cp -rp "${base_dir}"/sources/$1-workdir "${source_dir}"
+        cp -rp "${base_dir}"/${_sources_root}/$1-workdir "${source_dir}"
     fi
 
-    force_remove "${base_dir}"/sources/$1.prepared
+    force_remove "${base_dir}"/${_sources_root}/$1.prepared
 
     local cross_compile=yes
     local container_pkgs=
@@ -1341,8 +1343,8 @@ do_pkg() {
     if [[ ! -f "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" ]]; then
         force_remove "${build_dir}"/builds/"$1"
         if [[ -z ${from_source} ]] \
-           && [[ -f "${base_dir}/sources/$1.built" ]] \
-           && [[ $(cat "${base_dir}/sources/$1.built") != "${version}_${revision}" ]]; then
+           && [[ -f "${base_dir}/${_sources_root}/$1.built" ]] \
+           && [[ $(cat "${base_dir}/${_sources_root}/$1.built") != "${version}_${revision}" ]]; then
             tracked_subshell 'clean_sources "${name}"'
         fi
     fi
@@ -1353,7 +1355,7 @@ do_pkg() {
         tracked_subshell 'do_source "${name}" recipes'
     fi
 
-    echo "${version}_${revision}" >"${base_dir}"/sources/$1.built
+    echo "${version}_${revision}" >"${base_dir}"/${_sources_root}/$1.built
 
     local container_pkgs=
     local sysroot=
@@ -1758,7 +1760,7 @@ do_run_in() {
         fi
 
         if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/sources/${from_source}
+            local source_dir="${base_dir}"/${_sources_root}/${from_source}
         else
             local source_dir="${base_dir}"/"${source_dir}"
         fi

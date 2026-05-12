@@ -131,9 +131,12 @@ Additionally, the **source directory** will gain a few extra entries during use:
 
 ```
 example-source/
-|-- .jinx-cache/   # XBPS, debootstrap, container image cache
-\-- sources/       # downloaded/cloned recipe sources
+|-- .jinx-cache/    # XBPS, debootstrap, container image cache
+|-- sources/        # downloaded/cloned sources for recipes/
+\-- host-sources/   # downloaded/cloned sources for host-recipes/
 ```
+
+Normal recipes and host recipes get fully separate source trees, mirroring the `recipes/` vs `host-recipes/` split. A recipe named `foo` in `recipes/` extracts to `sources/foo/`, while a recipe with the same name in `host-recipes/` extracts to `host-sources/foo/` - so the two can have independent inline sources without colliding.
 
 >[!note]
 >In-tree builds are explicitly forbidden. Running `jinx init` from a directory that already contains a `Jinxfile` will fail.
@@ -920,7 +923,7 @@ In addition to the recipe's own [Properties](<#properties>) and anything the [Ji
 |---|---|
 | `name` | The package name. Inferred from the recipe's directory basename (e.g. `recipes/xz/recipe` produces `name=xz`). |
 | `recipe_dir` | Absolute path to the recipe's own directory (the one containing the `recipe` file and the optional `patches/` subdirectory). Useful for shipping additional files alongside the recipe and referencing them from `configure()`/`build()`/`package()`. |
-| `source_dir` | Path to the unpacked source tree (e.g. `/base_dir/sources/<name>` inside the container). |
+| `source_dir` | Path to the unpacked source tree (e.g. `/base_dir/sources/<name>` for normal recipes, `/base_dir/host-sources/<name>` for host recipes, inside the container). |
 | `prefix` | Install prefix. `/usr` for normal recipes, `/usr/local` for host recipes. |
 | `sysroot` | Path to the populated sysroot in the container (`/sysroot`). |
 | `dest_dir` | Where `package()` should `make install` to. Jinx packs this into an XBPS file (normal recipes) or moves it under `host-pkgs/<name>/` (host recipes). |
