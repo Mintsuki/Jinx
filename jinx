@@ -71,8 +71,6 @@ cmd_help() {
     printf "\n   build              Builds package(s), does incremental builds"
     printf "\n   update             Update package(s) and their dependencies if necessary"
     printf "\n   rebuild            Rebuilds package(s)"
-    printf "\n   host-build         Same as build, but for host package(s)"
-    printf "\n   host-rebuild       Same as rebuild, but for host package(s)"
     printf "\n   regenerate|regen   Regenerates patch for package(s) and re-runs prepare step"
     printf "\n   install            Installs package(s) (use '-f' to reinstall)"
     printf "\n   dry-run            Prints all packages that need to be built in order (space separated)"
@@ -299,13 +297,18 @@ if [[ ${name} != ${_expected_name} ]]; then
     die "$0: recipe at '${_recipe_dir}' must not override 'name' (recipe sets '${name}' but directory is '${_expected_name}'); remove the 'name=' assignment from the recipe"
 fi
 
-local _from_source_dir=recipes
+case "${_recipe_dir}" in
+    */host-recipes/*) local _from_source_dir=host-recipes ;;
+    *) local _from_source_dir=recipes ;;
+esac
 if [[ -n ${from_host_source} ]]; then
     if [[ -n ${from_source} ]]; then
         die "$0: recipe '${name}' sets both from_source and from_host_source"
     fi
     local from_source=${from_host_source}
     local _from_source_dir=host-recipes
+elif [[ -n ${from_source} ]]; then
+    local _from_source_dir=recipes
 fi
 
 if [[ -n ${from_source} && -d ${_recipe_dir}/patches ]]; then
@@ -864,7 +867,6 @@ local hostdeps="${source_hostdeps}"
 local deps="${source_deps}"
 local allow_network="${source_allow_network}"
 EOF
-    printf 'local _from_source_dir=%q\n' "${dir}"
 }
 
 do_fetch() {
@@ -1219,7 +1221,13 @@ do_host_rebuild() {
 do_regen() {
     eval "$(source_source_recipe "$1" "$2")"
 
-    [[ -n ${from_source} ]] && die "$0: cannot regen recipe '$1' that uses from_source/from_host_source - regen the actual source recipe instead"
+    if [[ -n ${from_source} ]]; then
+        if [[ ${_from_source_dir} == host-recipes ]]; then
+            die "$0: recipe '$1' uses from_source/from_host_source; regen its source with: $0 regen host:${from_source}"
+        else
+            die "$0: recipe '$1' uses from_source/from_host_source; regen its source with: $0 regen ${from_source}"
+        fi
+    fi
     [[ -f "${base_dir}/sources/$1.patched" ]] || die "cannot regenerate non-built package"
 
     eval "$(get_real_source_dir)"
@@ -1413,23 +1421,19 @@ do_pkg() {
     fi
 }
 
-cmd_host_build() {
-    local ppkg
-    for ppkg in "$@"; do
-        local pkg
-        for pkg in $(cd "${base_dir}/host-recipes" && echo ${ppkg}); do
-            tracked_subshell 'do_host_pkg "${pkg}"'
-        done
-    done
-}
-
 cmd_build() {
     local ppkg
     for ppkg in "$@"; do
         local pkg
-        for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
-            tracked_subshell 'do_pkg "${pkg}"'
-        done
+        if [[ ${ppkg} == host:* ]]; then
+            for pkg in $(cd "${base_dir}/host-recipes" && echo ${ppkg#host:}); do
+                tracked_subshell 'do_host_pkg "${pkg}"'
+            done
+        else
+            for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
+                tracked_subshell 'do_pkg "${pkg}"'
+            done
+        fi
     done
 }
 
@@ -1707,17 +1711,18 @@ cmd_download() {
 }
 
 cmd_regen() {
-    local i
-    for i in "$@"; do
-        local dir=
-        if [[ -f "${base_dir}/recipes/$i/recipe" ]]; then
-            local dir=recipes
-        elif [[ -f "${base_dir}/host-recipes/$i/recipe" ]]; then
-            local dir=host-recipes
+    local ppkg
+    for ppkg in "$@"; do
+        local pkg
+        if [[ ${ppkg} == host:* ]]; then
+            for pkg in $(cd "${base_dir}/host-recipes" && echo ${ppkg#host:}); do
+                tracked_subshell 'do_regen "${pkg}" host-recipes'
+            done
         else
-            die "$0: recipe '$i' not found in recipes/ or host-recipes/"
+            for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
+                tracked_subshell 'do_regen "${pkg}" recipes'
+            done
         fi
-        tracked_subshell 'do_regen "$i" "$dir"'
     done
 }
 
@@ -1757,62 +1762,55 @@ cmd_run_in() {
     if [[ -z ${1-} ]]; then
         die "$0: run-in requires a recipe name"
     fi
-    local run_in_recipe="$1"
+    local recipe_glob="$1"
     shift 1
     if [[ -z ${1-} ]]; then
         die "$0: run-in requires a command to run"
     fi
 
-    if [[ ! -f "${base_dir}/recipes/${run_in_recipe}/recipe" ]]; then
-        die "$0: recipe '${run_in_recipe}' not found"
-    fi
+    local run_in_recipe
+    for run_in_recipe in $(cd "${base_dir}/recipes" && echo ${recipe_glob}); do
+        if [[ ! -f "${base_dir}/recipes/${run_in_recipe}/recipe" ]]; then
+            die "$0: recipe '${run_in_recipe}' not found"
+        fi
 
-    eval "$(include_recipe "${base_dir}"/recipes/${run_in_recipe})"
+        eval "$(include_recipe "${base_dir}"/recipes/${run_in_recipe})"
 
-    if [[ -n ${from_source} ]]; then
-        tracked_subshell 'do_source "${from_source}" "${_from_source_dir}"'
-    else
-        tracked_subshell 'do_source "${name}" recipes'
-    fi
+        if [[ -n ${from_source} ]]; then
+            tracked_subshell 'do_source "${from_source}" "${_from_source_dir}"'
+        else
+            tracked_subshell 'do_source "${name}" recipes'
+        fi
 
-    make_temp
-    local cmd_file="${tmp}"
-    {
-        printf 'exec'
-        local arg
-        for arg in "$@"; do
-            local escaped="$arg"
-            local escaped="${escaped//\\/\\\\}"
-            local escaped="${escaped//\"/\\\"}"
-            local escaped="${escaped//\`/\\\`}"
-            printf ' "%s"' "$escaped"
-        done
-        printf '\n'
-    } >"${cmd_file}"
-    local cmd_file_inner="/base_dir/.jinx-cache/tmp/$(basename "${cmd_file}")"
+        make_temp
+        local cmd_file="${tmp}"
+        {
+            printf 'exec'
+            local arg
+            for arg in "$@"; do
+                local escaped="$arg"
+                local escaped="${escaped//\\/\\\\}"
+                local escaped="${escaped//\"/\\\"}"
+                local escaped="${escaped//\`/\\\`}"
+                printf ' "%s"' "$escaped"
+            done
+            printf '\n'
+        } >"${cmd_file}"
+        local cmd_file_inner="/base_dir/.jinx-cache/tmp/$(basename "${cmd_file}")"
 
-    local container_pkgs=
-    local sysroot_dir=
-    local imgroot=
-    prepare_container
+        local container_pkgs=
+        local sysroot_dir=
+        local imgroot=
+        prepare_container
 
-    mkdir -p "${build_dir}"/builds/${name}
+        mkdir -p "${build_dir}"/builds/${name}
 
-    local container_sources_ro=
-    local container_base_dir_ro=
-    local allow_network=yes
-    run_in_container internal-run-in "${run_in_recipe}" "${cmd_file_inner}"
+        local container_sources_ro=
+        local container_base_dir_ro=
+        local allow_network=yes
+        run_in_container internal-run-in "${run_in_recipe}" "${cmd_file_inner}"
 
-    destroy_container
-}
-
-cmd_host_rebuild() {
-    local ppkg
-    for ppkg in "$@"; do
-        local pkg
-        for pkg in $(cd "${base_dir}/host-recipes" && echo ${ppkg}); do
-            tracked_subshell 'do_host_rebuild "${pkg}"'
-        done
+        destroy_container
     done
 }
 
@@ -1820,9 +1818,15 @@ cmd_rebuild() {
     local ppkg
     for ppkg in "$@"; do
         local pkg
-        for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
-            tracked_subshell 'do_rebuild "${pkg}"'
-        done
+        if [[ ${ppkg} == host:* ]]; then
+            for pkg in $(cd "${base_dir}/host-recipes" && echo ${ppkg#host:}); do
+                tracked_subshell 'do_host_rebuild "${pkg}"'
+            done
+        else
+            for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
+                tracked_subshell 'do_rebuild "${pkg}"'
+            done
+        fi
     done
 }
 
@@ -2171,10 +2175,6 @@ case "$1" in
         shift 1
         do_run_in "$@"
         ;;
-    host-build)
-        shift 1
-        cmd_host_build "$@"
-        ;;
     build)
         shift 1
         cmd_build "$@"
@@ -2186,10 +2186,6 @@ case "$1" in
     regenerate|regen)
         shift 1
         cmd_regen "$@"
-        ;;
-    host-rebuild)
-        shift 1
-        cmd_host_rebuild "$@"
         ;;
     rebuild)
         shift 1

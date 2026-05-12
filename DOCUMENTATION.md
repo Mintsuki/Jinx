@@ -14,8 +14,6 @@ Links to different points in this documentation:
 	- [`build`](<#build>)
 	- [`update`](<#update>)
 	- [`rebuild`](<#rebuild>)
-	- [`host-build`](<#host-build>)
-	- [`host-rebuild`](<#host-rebuild>)
 	- [`regenerate`](<#regenerate>)
 	- [`install`](<#install>)
 	- [`dry-run`](<#dry-run>)
@@ -155,8 +153,6 @@ usage: jinx <command> <package(s)>
    build              Builds package(s), does incremental builds
    update             Update package(s) and their dependencies if necessary
    rebuild            Rebuilds package(s)
-   host-build         Same as build, but for host package(s)
-   host-rebuild       Same as rebuild, but for host package(s)
    regenerate|regen   Regenerates patch for package(s) and re-runs prepare step
    install            Installs package(s) (use '-f' to reinstall)
    dry-run            Prints all packages that need to be built in order (space separated)
@@ -168,7 +164,10 @@ example: jinx update '*'
 ```
 
 >[!tip]
->For most commands, an argument of `'*'` (or any shell glob) can be used in place of recipe names; Jinx expands it against the relevant recipes directory. This is great for "full" distributions. Exceptions: [`regenerate`](<#regenerate>) and [`run-in`](<#run-in>) take recipe names verbatim and do not perform glob expansion.
+>For all commands that take recipe names, an argument of `'*'` (or any shell glob) can be used in place of an explicit name; Jinx expands it against the relevant recipes directory. This is great for "full" distributions.
+
+>[!tip]
+>For commands that operate on packages ([`build`](<#build>), [`rebuild`](<#rebuild>), [`regenerate`](<#regenerate>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`.
 
 #### `init`
 
@@ -194,7 +193,7 @@ This produces a `.jinx-parameters` file containing at minimum `JINX_SOURCE_DIR` 
 
 #### `build`
 
-Followed by as many arguments as recipes to build. `build` will *not* attempt to build host recipes unless one is a specified dependency of a to-be-built recipe.
+Followed by as many arguments as recipes to build. By default each argument refers to a normal recipe in `recipes/`; prefix a name with `host:` (e.g. `host:gcc`) to refer to a host recipe in `host-recipes/`. `build` will *not* attempt to build host recipes unless they are specified explicitly with `host:` or pulled in as a dependency of a to-be-built recipe.
 
 Builds are **incremental**: the recipe's build directory is preserved across invocations whenever a matching XBPS package file already exists, so `make` (or whichever build tool the recipe uses) can do its own incremental work. Unlike [`update`](<#update>), `build` will re-invoke the recipe's `build()` and `package()` functions even when nothing has changed.
 
@@ -206,21 +205,15 @@ If invoked with no arguments, behaves as `update '*'`.
 
 #### `rebuild`
 
-Forces a rebuild of the specified package(s) by removing the build directory first. This causes the recipe's [`configure()`](<#configure>) function to be re-run on the next build.
-
-#### `host-build`
-
-Same as `build`, but for `host-recipes/`.
-
-#### `host-rebuild`
-
-Same as `rebuild`, but for `host-recipes/`.
+Forces a rebuild of the specified package(s) by removing the build directory first. This causes the recipe's [`configure()`](<#configure>) function to be re-run on the next build. Accepts the `host:` prefix to rebuild a host recipe.
 
 #### `regenerate`
 
 - Alias: `regen`
 
-Regenerates `<dir>/<name>/patches/jinx-working-patch.patch` (where `<dir>` is `recipes` or `host-recipes`, whichever holds the recipe) from any in-place modifications made to `sources/<name>-workdir/`, then re-runs the [`prepare()`](<#prepare>) step. Use this when iterating on patches: edit the working copy, run `regen`, then `rebuild` the recipe. Only valid on source recipes (i.e. recipes that declare their own sources); attempting to `regen` a recipe that uses [`from_source`](<#from_source>) or [`from_host_source`](<#from_host_source>) is an error - regen the actual source recipe instead.
+Regenerates `<dir>/<name>/patches/jinx-working-patch.patch` from any in-place modifications made to `sources/<name>-workdir/`, then re-runs the [`prepare()`](<#prepare>) step. Use this when iterating on patches: edit the working copy, run `regen`, then `rebuild` the recipe. Accepts the `host:` prefix (e.g. `jinx regen host:gcc`) to regen a host recipe.
+
+Only valid on source recipes (i.e. recipes that declare their own sources); attempting to `regen` a recipe that uses [`from_source`](<#from_source>) or [`from_host_source`](<#from_host_source>) is an error - the error message points at the right command for regenerating the actual source recipe.
 
 #### `install`
 
