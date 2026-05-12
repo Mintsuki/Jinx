@@ -258,7 +258,6 @@ include_recipe() {
     fi
     cat <<'EOF'
 local cross_compile=
-local name=
 local version=
 local revision=
 local from_source=
@@ -291,8 +290,14 @@ build() { :; }
 package() { :; }
 EOF
     printf 'local _recipe_dir=%q\n' "$1"
+    printf 'local name=%q\n' "$(basename "$1")"
+    printf 'local _expected_name=%q\n' "$(basename "$1")"
     printf '. %q/recipe\n' "$1"
     cat <<'EOF'
+
+if [[ ${name} != ${_expected_name} ]]; then
+    die "$0: recipe at '${_recipe_dir}' must not override 'name' (recipe sets '${name}' but directory is '${_expected_name}'); remove the 'name=' assignment from the recipe"
+fi
 
 local _from_source_dir=recipes
 if [[ -n ${from_host_source} ]]; then

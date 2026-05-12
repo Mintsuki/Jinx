@@ -27,7 +27,6 @@ Links to different points in this documentation:
 - [Environment Variables](<#environment-variables>)
 - [Recipes](<#recipes>)
 	- [Properties](<#properties>)
-		- [`name`](<#name>)
 		- [`version`](<#version>)
 		- [`revision`](<#revision>)
 		- [`source_dir`](<#source_dir>)
@@ -361,22 +360,6 @@ Defined within the recipe, there are a number of properties that determine how J
 >[!note]
 >"Properties", as they are referred to in this documentation, are just shell variables that Jinx makes use of. Recipes are sourced by bash, so any valid bash syntax for defining these variables will be accepted (POSIX shell syntax is a subset and continues to work unchanged).
 
-#### `name`
-
-- **Required**.
-
-Basic property to define the name of the package that the recipe specifies. There is an expectation that the value of this property is equal to the recipe's directory name (e.g. `recipes/<name>/recipe`); the `name` property is used to identify the build/package directories for the recipe and the source extraction in `sources/`.
-
-Example:
-
-```sh
-#! /bin/sh
-# recipes/test/recipe
-
-name=test
-# ...
-```
-
 #### `version`
 
 - **Required**, but not for host recipes.
@@ -441,7 +424,6 @@ source_dir="test/"
 >#! /bin/sh
 ># recipes/kernel/recipe
 >
->name=kernel
 >version=0
 >revision=1
 >source_dir="kernel" # Our kernel project is within the `kernel/` directory.
