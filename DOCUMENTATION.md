@@ -11,8 +11,8 @@ Links to different points in this documentation:
 - [Basic Project Structure](<#basic-project-structure>)
 - [Commands](<#commands>)
 	- [`init`](<#init>)
-	- [`build`](<#build>)
 	- [`update`](<#update>)
+	- [`build`](<#build>)
 	- [`rebuild`](<#rebuild>)
 	- [`regenerate`](<#regenerate>)
 	- [`install`](<#install>)
@@ -151,8 +151,8 @@ usage: jinx <command> <package(s)>
    help|--help        Displays this message
    version|--version  Prints the version
    init               Initialises a build directory
+   update             Rebuild outdated package(s); use '-b' to also build never-built ones
    build              Builds package(s), does incremental builds
-   update             Update package(s) and their dependencies if necessary
    rebuild            Rebuilds package(s)
    regenerate|regen   Regenerates patch for package(s) and re-runs prepare step
    install            Installs package(s) (use '-f' to reinstall)
@@ -192,12 +192,6 @@ This produces a `.jinx-parameters` file containing at minimum `JINX_SOURCE_DIR` 
 >[!note]
 >To "deinitialise" a build directory, simply remove `.jinx-parameters`. There is no separate `deinit` command.
 
-#### `build`
-
-Followed by as many arguments as recipes to build. By default each argument refers to a normal recipe in `recipes/`; prefix a name with `host:` (e.g. `host:gcc`) to refer to a host recipe in `host-recipes/`. `build` will *not* attempt to build host recipes unless they are specified explicitly with `host:` or pulled in as a dependency of a to-be-built recipe.
-
-Builds are **incremental**: the recipe's build directory is preserved across invocations whenever a matching XBPS package file already exists, so `make` (or whichever build tool the recipe uses) can do its own incremental work. Unlike [`update`](<#update>), `build` will re-invoke the recipe's `build()` and `package()` functions even when nothing has changed.
-
 #### `update`
 
 ```sh
@@ -209,6 +203,12 @@ Rebuilds the specified package(s) when they are **out of date**. A package is co
 The `-b` flag (mnemonic: "build") restores the older behavior: never-built packages are also built. Transitive dependencies needed to satisfy an outdated target are always built regardless of `-b`, since the target's build would otherwise fail.
 
 If invoked with no recipe arguments (other than `-b`), behaves as `update [-b] '*'`.
+
+#### `build`
+
+Followed by as many arguments as recipes to build. By default each argument refers to a normal recipe in `recipes/`; prefix a name with `host:` (e.g. `host:gcc`) to refer to a host recipe in `host-recipes/`. `build` will *not* attempt to build host recipes unless they are specified explicitly with `host:` or pulled in as a dependency of a to-be-built recipe.
+
+Builds are **incremental**: the recipe's build directory is preserved across invocations whenever a matching XBPS package file already exists, so `make` (or whichever build tool the recipe uses) can do its own incremental work. Unlike [`update`](<#update>), `build` will re-invoke the recipe's `build()` and `package()` functions even when nothing has changed.
 
 #### `rebuild`
 
