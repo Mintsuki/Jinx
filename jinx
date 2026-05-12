@@ -287,17 +287,17 @@ configure() { :; }
 build() { :; }
 package() { :; }
 EOF
-    printf 'local _recipe_dir=%q\n' "$1"
+    printf 'local recipe_dir=%q\n' "$1"
     printf 'local name=%q\n' "$(basename "$1")"
     printf 'local _expected_name=%q\n' "$(basename "$1")"
     printf '. %q/recipe\n' "$1"
     cat <<'EOF'
 
 if [[ ${name} != ${_expected_name} ]]; then
-    die "$0: recipe at '${_recipe_dir}' must not override 'name' (recipe sets '${name}' but directory is '${_expected_name}'); remove the 'name=' assignment from the recipe"
+    die "$0: recipe at '${recipe_dir}' must not override 'name' (recipe sets '${name}' but directory is '${_expected_name}'); remove the 'name=' assignment from the recipe"
 fi
 
-case "${_recipe_dir}" in
+case "${recipe_dir}" in
     */host-recipes/*) local _from_source_dir=host-recipes ;;
     *) local _from_source_dir=recipes ;;
 esac
@@ -311,7 +311,7 @@ elif [[ -n ${from_source} ]]; then
     local _from_source_dir=recipes
 fi
 
-if [[ -n ${from_source} && -d ${_recipe_dir}/patches ]]; then
+if [[ -n ${from_source} && -d ${recipe_dir}/patches ]]; then
     die "$0: recipe '${name}' uses from_source/from_host_source and cannot have its own patches/ directory (patches live with the source recipe)"
 fi
 EOF

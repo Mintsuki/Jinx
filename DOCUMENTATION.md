@@ -53,6 +53,7 @@ Links to different points in this documentation:
 		- [`configure()`](<#configure>)
 		- [`build()`](<#build-1>)
 		- [`package()`](<#package>)
+	- [Provided Variables](<#provided-variables>)
 	- [Host Recipes](<#host-recipes>)
 	- [Patches](<#patches>)
 
@@ -904,6 +905,25 @@ package() {
 
 >[!note]
 >After `package()` returns, Jinx removes any `*.la` libtool files from the package directory, since they generally cause more trouble than they solve.
+
+### Provided Variables
+
+In addition to the recipe's own [Properties](<#properties>) and anything the [Jinxfile](<#jinxfile>) defines, Jinx populates the following variables that recipe functions can read:
+
+| Variable | Description |
+|---|---|
+| `name` | The package name. Inferred from the recipe's directory basename (e.g. `recipes/xz/recipe` produces `name=xz`). |
+| `recipe_dir` | Absolute path to the recipe's own directory (the one containing the `recipe` file and the optional `patches/` subdirectory). Useful for shipping additional files alongside the recipe and referencing them from `configure()`/`build()`/`package()`. |
+| `source_dir` | Path to the unpacked source tree (e.g. `/base_dir/sources/<name>` inside the container). |
+| `prefix` | Install prefix. `/usr` for normal recipes, `/usr/local` for host recipes. |
+| `sysroot_dir` | Path to the populated sysroot in the container (`/sysroot`). |
+| `dest_dir` | Where `package()` should `make install` to. Jinx packs this into an XBPS file (normal recipes) or moves it under `host-pkgs/<name>/` (host recipes). |
+| `parallelism` | Suggested `make -j` value. From `JINX_PARALLELISM` or auto-detected. |
+| `base_dir` | The project's source directory. `/base_dir` inside the container; absolute host path outside. |
+| `build_dir` | The build directory. `/build_dir` inside the container; absolute host path outside. |
+| `JINX_ARCH` | Target architecture (`x86_64`, `riscv64`, ...). |
+
+Recipes should treat these as read-only.
 
 ### Host Recipes
 
