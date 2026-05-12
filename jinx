@@ -24,6 +24,18 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 set -e
+set -u
+
+# Optional environment variables - initialise to empty so set -u is satisfied
+# regardless of whether the user/parent shell set them.
+: "${JINX_PARALLELISM:=}"
+: "${JINX_CACHE_DIR:=}"
+: "${JINX_NATIVE_MODE:=}"
+: "${JINX_NATIVE_LANG:=}"
+: "${JINX_CLEAN_WORKDIRS:=}"
+: "${TERM:=}"
+: "${COLORTERM:=}"
+: "${LD_LIBRARY_PATH:=}"
 
 IFS=$' \t\n'
 
@@ -47,7 +59,7 @@ die() {
     exit 1
 }
 
-if [[ -z $1 ]]; then
+if [[ -z ${1-} ]]; then
     die "$0: no command specified."
 fi
 
@@ -149,7 +161,7 @@ case "$1" in
         ;;
 esac
 
-if [[ -z $JINX_PARALLELISM ]]; then
+if [[ -z ${JINX_PARALLELISM} ]]; then
     max_threads_by_mem=$(( ((($(free | awk '/^Mem:/{print $2}') + 1048575) / 1048576) + 1) / 2 ))
     parallelism="$(nproc 2>/dev/null || echo 1)"
     parallelism=$(( parallelism < max_threads_by_mem ? parallelism : max_threads_by_mem ))
@@ -182,7 +194,7 @@ if [[ ! -d "$(dirname "$JINX_CONFIG_FILE")" ]]; then
 fi
 JINX_CONFIG_FILE="$(cd "$(dirname "$JINX_CONFIG_FILE")" && pwd -P)"/"$(basename "$JINX_CONFIG_FILE")"
 
-if [[ -z $JINX_CACHE_DIR ]]; then
+if [[ -z ${JINX_CACHE_DIR} ]]; then
     JINX_CACHE_DIR="${base_dir}/.jinx-cache"
 fi
 if [[ ! -d "$(dirname "$JINX_CACHE_DIR")" ]]; then
@@ -225,7 +237,7 @@ cleanup() {
 trap 'tmp_ret=$?; set +e; cleanup; trap - EXIT; exit ${tmp_ret}' INT TERM HUP QUIT EXIT
 
 make_temp() {
-    tmp="$(mktemp $1 "$JINX_CACHE_DIR/tmp/tmp.XXXXXXXX")"
+    tmp="$(mktemp ${1-} "$JINX_CACHE_DIR/tmp/tmp.XXXXXXXX")"
     temp_collect+=("${tmp}")
 }
 
@@ -1144,6 +1156,8 @@ do_source() {
     local container_pkgs=
     local sysroot_dir=
     local imgroot=
+    local container_sources_ro=
+    local container_base_dir_ro=
     prepare_container
 
     if [[ ! -f "${base_dir}/sources/$1.version" || $(cat "${base_dir}/sources/$1.version") != "${version}" ]]; then
@@ -1455,7 +1469,7 @@ do_update() {
 }
 
 cmd_update() {
-    if [[ -z $1 ]]; then
+    if [[ -z ${1-} ]]; then
         set -- '*'
     fi
 
@@ -1473,7 +1487,7 @@ cmd_dry_run() {
     # that are not already built in the build cache. Host packages (prefixed 'host:')
     # are mentioned inline just before the regular package that needs them,
     # and only if they haven't been mentioned before.
-    if [[ -z $1 ]]; then
+    if [[ -z ${1-} ]]; then
         set -- '*'
     fi
 
@@ -1579,11 +1593,11 @@ cmd_dry_run() {
 }
 
 cmd_download() {
-    if [[ -z ${JINX_REPO_URL} ]]; then
+    if [[ -z ${JINX_REPO_URL-} ]]; then
         die "$0: JINX_REPO_URL not set in Jinxfile"
     fi
 
-    if [[ -z $1 ]]; then
+    if [[ -z ${1-} ]]; then
         die "$0: download requires at least one package name"
     fi
 
@@ -1735,12 +1749,12 @@ do_run_in() {
 }
 
 cmd_run_in() {
-    if [[ -z $1 ]]; then
+    if [[ -z ${1-} ]]; then
         die "$0: run-in requires a recipe name"
     fi
     local run_in_recipe="$1"
     shift 1
-    if [[ -z $1 ]]; then
+    if [[ -z ${1-} ]]; then
         die "$0: run-in requires a command to run"
     fi
 
@@ -1809,9 +1823,12 @@ cmd_rebuild() {
 
 cmd_install() {
     local force_install=""
-    if [[ $1 == "-f" ]]; then
+    if [[ ${1-} == "-f" ]]; then
         local force_install="$1"
         shift 1
+    fi
+    if [[ -z ${1-} ]]; then
+        die "$0: install requires a sysroot directory"
     fi
     local sysroot="$1"
     shift 1
@@ -2091,19 +2108,19 @@ unset JINX_CMAKE_PLATFORM
 unset JINX_REPO_URL
 . "${JINX_CONFIG_FILE}"
 
-if [[ -z ${JINX_MAJOR_VER} ]]; then
+if [[ -z ${JINX_MAJOR_VER-} ]]; then
     die "$0: required Jinxfile variable JINX_MAJOR_VER missing"
 fi
 
-if [[ $JINX_MAJOR_VER != "$jinx_major_ver" ]]; then
-    die "$0: needed major version ($JINX_MAJOR_VER) differs from Jinx-provided major version ($jinx_major_ver)"
+if [[ ${JINX_MAJOR_VER} != "${jinx_major_ver}" ]]; then
+    die "$0: needed major version (${JINX_MAJOR_VER}) differs from Jinx-provided major version (${jinx_major_ver})"
 fi
 
-if [[ -z ${JINX_DEBIAN_SNAPSHOT} ]]; then
+if [[ -z ${JINX_DEBIAN_SNAPSHOT-} ]]; then
     die "$0: required Jinxfile variable JINX_DEBIAN_SNAPSHOT missing"
 fi
 
-if [[ -z $JINX_ARCH ]]; then
+if [[ -z ${JINX_ARCH-} ]]; then
     die "$0: required config variable \$JINX_ARCH missing"
 fi
 
@@ -2113,7 +2130,7 @@ fi
 
 if  [[ ! -f "${JINX_CACHE_DIR}/version" || $(cat "${JINX_CACHE_DIR}/version") != "${jinx_version}" ]] \
  || [[ ! -f "${JINX_CACHE_DIR}/debian_snapshot" || $(cat "${JINX_CACHE_DIR}/debian_snapshot") != "${JINX_DEBIAN_SNAPSHOT}" ]] \
- || [[ ! -f "${JINX_CACHE_DIR}/base_packages" || $(cat "${JINX_CACHE_DIR}/base_packages") != "${JINX_BASE_PACKAGES}" ]]; then
+ || [[ ! -f "${JINX_CACHE_DIR}/base_packages" || $(cat "${JINX_CACHE_DIR}/base_packages") != "${JINX_BASE_PACKAGES-}" ]]; then
     redo_first_use
 fi
 
