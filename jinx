@@ -71,6 +71,7 @@ cmd_help() {
     printf "\n   update             Rebuild outdated package(s); use '-b' to also build never-built ones"
     printf "\n   build              Builds package(s), does incremental builds"
     printf "\n   rebuild            Rebuilds package(s)"
+    printf "\n   revbump            Bumps the revision of all (transitive) dependents of package(s)"
     printf "\n   regenerate|regen   Regenerates patch for package(s) and re-runs prepare step"
     printf "\n   install            Installs package(s) (use '-f' to reinstall)"
     printf "\n   dry-run            Prints all packages that need to be built in order (space separated)"
@@ -1847,6 +1848,125 @@ cmd_rebuild() {
     done
 }
 
+revbump_one_recipe() {
+    # Rewrite the first literal 'revision=' line, incrementing the integer and
+    # preserving indentation, quoting style and trailing whitespace.
+    local recipe_file="$1"
+    local label="$2"
+
+    if [[ ! -f ${recipe_file} ]]; then
+        die "$0: revbump: recipe file '${recipe_file}' not found"
+    fi
+
+    local rev_re='^([[:space:]]*)revision=("?|'\''?)([0-9]+)("?|'\''?)([[:space:]]*)$'
+
+    make_temp
+    local out="${tmp}"
+
+    local count=0
+    local old_rev=
+    local line
+    while IFS= read -r line || [[ -n ${line} ]]; do
+        if [[ ${line} =~ $rev_re ]]; then
+            local count=$((count + 1))
+            if [[ ${count} == 1 ]]; then
+                local old_rev="${BASH_REMATCH[3]}"
+                local line="${BASH_REMATCH[1]}revision=${BASH_REMATCH[2]}$((old_rev + 1))${BASH_REMATCH[4]}${BASH_REMATCH[5]}"
+            fi
+        fi
+        printf '%s\n' "${line}"
+    done <"${recipe_file}" >"${out}"
+
+    if [[ ${count} != 1 ]]; then
+        die "$0: revbump: recipe '${label}' has ${count} literal 'revision=' line(s); expected exactly 1 (bump it manually)"
+    fi
+
+    mv "${out}" "${recipe_file}"
+
+    echo "  ${label}: revision ${old_rev} -> $((old_rev + 1))"
+}
+
+cmd_revbump() {
+    # Bump the revision of every recipe that depends, directly or
+    # transitively, on the given package(s). Targets and dependents may be
+    # normal recipes or host recipes (selected with the 'host:' prefix).
+    # 'deps'/'builddeps' resolve in recipes/, 'hostdeps'/'hostrundeps' in
+    # host-recipes/, so the graph spans both namespaces.
+    if [[ -z ${1-} ]]; then
+        die "$0: revbump requires at least one package name"
+    fi
+
+    local -A revdeps
+    local nsdir pkg
+    for nsdir in recipes host-recipes; do
+        for pkg in $(cd "${base_dir}/${nsdir}" && echo *); do
+            [[ -f "${base_dir}/${nsdir}/${pkg}/recipe" ]] || continue
+            local node="${nsdir}/${pkg}"
+
+            local depinfo
+            depinfo="$(eval "$(include_recipe "${base_dir}/${nsdir}/${pkg}")" \
+                && printf '%s\n%s\n' "${deps} ${builddeps}" "${hostdeps} ${hostrundeps}")"
+            local rdeps_line="${depinfo%%$'\n'*}"
+            local rhost_line="${depinfo#*$'\n'}"
+            local rhost_line="${rhost_line%%$'\n'*}"
+
+            local d
+            for d in ${rdeps_line}; do
+                [[ -n $d ]] && revdeps["recipes/${d}"]+=" ${node}"
+            done
+            for d in ${rhost_line}; do
+                [[ -n $d ]] && revdeps["host-recipes/${d}"]+=" ${node}"
+            done
+        done
+    done
+
+    local -A to_bump
+    local -A targets
+
+    revbump_visit() {
+        local n="$1"
+        local r
+        for r in ${revdeps[$n]-}; do
+            if [[ -z ${to_bump[$r]+x} ]]; then
+                to_bump[$r]=1
+                revbump_visit "$r"
+            fi
+        done
+    }
+
+    local ppkg
+    for ppkg in "$@"; do
+        local tns tglob
+        if [[ ${ppkg} == host:* ]]; then
+            local tns=host-recipes
+            local tglob="${ppkg#host:}"
+        else
+            local tns=recipes
+            local tglob="${ppkg}"
+        fi
+        for pkg in $(cd "${base_dir}/${tns}" && echo ${tglob}); do
+            if [[ ! -f "${base_dir}/${tns}/${pkg}/recipe" ]]; then
+                die "$0: revbump: recipe '${tns}/${pkg}' not found"
+            fi
+            targets["${tns}/${pkg}"]=1
+            revbump_visit "${tns}/${pkg}"
+        done
+    done
+
+    # A requested package is the changed input itself, never a bump target.
+    local node
+    local bumped_any=no
+    for node in $(printf '%s\n' "${!to_bump[@]}" | sort); do
+        [[ -n ${targets[$node]+x} ]] && continue
+        revbump_one_recipe "${base_dir}/${node}/recipe" "${node}"
+        local bumped_any=yes
+    done
+
+    if [[ ${bumped_any} == no ]]; then
+        echo "jinx: revbump: no dependents found for: $*"
+    fi
+}
+
 cmd_install() {
     local force_install=""
     if [[ ${1-} == "-f" ]]; then
@@ -2207,6 +2327,10 @@ case "$1" in
     rebuild)
         shift 1
         cmd_rebuild "$@"
+        ;;
+    revbump)
+        shift 1
+        cmd_revbump "$@"
         ;;
     install)
         shift 1

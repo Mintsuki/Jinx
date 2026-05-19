@@ -14,6 +14,7 @@ Links to different points in this documentation:
 	- [`update`](<#update>)
 	- [`build`](<#build>)
 	- [`rebuild`](<#rebuild>)
+	- [`revbump`](<#revbump>)
 	- [`regenerate`](<#regenerate>)
 	- [`install`](<#install>)
 	- [`dry-run`](<#dry-run>)
@@ -157,6 +158,7 @@ usage: jinx <command> [args...]
    update             Rebuild outdated package(s); use '-b' to also build never-built ones
    build              Builds package(s), does incremental builds
    rebuild            Rebuilds package(s)
+   revbump            Bumps the revision of all (transitive) dependents of package(s)
    regenerate|regen   Regenerates patch for package(s) and re-runs prepare step
    install            Installs package(s) (use '-f' to reinstall)
    dry-run            Prints all packages that need to be built in order (space separated)
@@ -171,7 +173,7 @@ example: jinx update '*'
 >For all commands that take recipe names, an argument of `'*'` (or any shell glob) can be used in place of an explicit name; Jinx expands it against the relevant recipes directory. This is great for "full" distributions.
 
 >[!tip]
->For commands that operate on packages ([`build`](<#build>), [`rebuild`](<#rebuild>), [`regenerate`](<#regenerate>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`.
+>For commands that operate on packages ([`build`](<#build>), [`rebuild`](<#rebuild>), [`revbump`](<#revbump>), [`regenerate`](<#regenerate>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`.
 
 #### `init`
 
@@ -216,6 +218,14 @@ Builds are **incremental**: the recipe's build directory is preserved across inv
 #### `rebuild`
 
 Forces a rebuild of the specified package(s) by removing the build directory first. This causes the recipe's [`configure()`](<#configure>) function to be re-run on the next build. Accepts the `host:` prefix to rebuild a host recipe.
+
+#### `revbump`
+
+Bumps the [`revision`](<#revision>) of every recipe that depends, directly or transitively, on the given package(s), so that a subsequent [`update`](<#update>) rebuilds them. Accepts globs and the `host:` prefix like the other package commands. The dependency graph spans both namespaces (`deps`/`builddeps` resolve in `recipes/`, `hostdeps`/`hostrundeps` in `host-recipes/`), so a single `revbump` reaches dependents in both `recipes/` and `host-recipes/` regardless of whether the target is a normal or a host recipe.
+
+The given package(s) are treated as the changed input and are themselves left untouched - only their dependents are bumped. Recipe files are edited in place, preserving the existing indentation and quoting of the `revision=` line; a recipe that does not have exactly one literal `revision=` line is reported rather than guessed at, and a target with no dependents is a no-op.
+
+This automates step 2 of the [reverse-dependency workflow](<#reverse-dependencies-are-not-automatically-rebuilt>) for the entire transitive closure: bump the library, `jinx revbump <library>`, then `jinx update '*'`.
 
 #### `regenerate`
 
@@ -300,7 +310,7 @@ If you bump a library's `version` or `revision`, Jinx will rebuild that library,
 When a library's ABI/soname changes and its dependents need recompiling, the conventional workflow (matching xbps-src and PKGBUILD-style systems) is:
 
 1. Bump the affected library's `version` or `revision`.
-2. Bump `revision=` on every affected reverse-dependency recipe to mark them as needing a rebuild too.
+2. Bump `revision=` on every affected reverse-dependency recipe to mark them as needing a rebuild too. [`jinx revbump <library>`](<#revbump>) does this automatically for the whole transitive closure.
 3. Run `jinx update '*'`. The topological sort will rebuild the library first, then each dependent in the right order.
 
 If you only do step 1, dependents keep their existing XBPS files until you delete them manually, run `jinx rebuild <dep>` for each, or bump their `revision`.
