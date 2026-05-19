@@ -1183,8 +1183,8 @@ clean_sources() {
     force_remove "${base_dir}"/${_sources_root}/$1.version
     force_remove "${base_dir}"/${_sources_root}/$1.patched
     force_remove "${base_dir}"/${_sources_root}/$1.prepared
-    force_remove "${base_dir}"/${_sources_root}/$1.built
-    force_remove "${base_dir}"/${_sources_root}/$1.host-built
+    force_remove "${base_dir}"/${_sources_root}/$1.revision
+    force_remove "${base_dir}"/${_sources_root}/$1.host-revision
 }
 
 do_source() {
@@ -1327,8 +1327,8 @@ do_host_pkg() {
     if [[ ! -f "${build_dir}/host-pkgs/${name}-${version}_${revision}.${host_arch}.xbps" ]]; then
         force_remove "${build_dir}"/host-builds/"$1"
         if [[ -z ${from_source} ]] \
-           && [[ -f "${base_dir}/${_sources_root}/$1.host-built" ]] \
-           && [[ $(cat "${base_dir}/${_sources_root}/$1.host-built") != "${version}_${revision}" ]]; then
+           && [[ -f "${base_dir}/${_sources_root}/$1.host-revision" ]] \
+           && [[ $(cat "${base_dir}/${_sources_root}/$1.host-revision") != "${revision}" ]]; then
             tracked_subshell 'clean_sources "${name}"'
         fi
     fi
@@ -1339,7 +1339,7 @@ do_host_pkg() {
         tracked_subshell 'do_source "${name}" host-recipes'
     fi
 
-    echo "${version}_${revision}" >"${base_dir}"/${_sources_root}/$1.host-built
+    echo "${revision}" >"${base_dir}"/${_sources_root}/$1.host-revision
 
     local cross_compile=yes
     local container_pkgs=
@@ -1415,8 +1415,8 @@ do_pkg() {
     if [[ ! -f "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" ]]; then
         force_remove "${build_dir}"/builds/"$1"
         if [[ -z ${from_source} ]] \
-           && [[ -f "${base_dir}/${_sources_root}/$1.built" ]] \
-           && [[ $(cat "${base_dir}/${_sources_root}/$1.built") != "${version}_${revision}" ]]; then
+           && [[ -f "${base_dir}/${_sources_root}/$1.revision" ]] \
+           && [[ $(cat "${base_dir}/${_sources_root}/$1.revision") != "${revision}" ]]; then
             tracked_subshell 'clean_sources "${name}"'
         fi
     fi
@@ -1427,7 +1427,7 @@ do_pkg() {
         tracked_subshell 'do_source "${name}" recipes'
     fi
 
-    echo "${version}_${revision}" >"${base_dir}"/${_sources_root}/$1.built
+    echo "${revision}" >"${base_dir}"/${_sources_root}/$1.revision
 
     local container_pkgs=
     local sysroot=
