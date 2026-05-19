@@ -177,22 +177,32 @@ example: jinx update '*'
 
 #### `init`
 
-Initialises the current directory as a build directory. The first argument is the path to the source directory (which must contain a `Jinxfile`). Any further arguments of the form `KEY=VALUE` are written into `.jinx-parameters` prefixed with `JINX_`.
+Initialises a build directory. Jinx autodetects the roles of the current directory and the single `<dir>` argument from where a `Jinxfile` is found:
+
+- If `<dir>` contains a `Jinxfile`, then `<dir>` is the **source** directory and the **current directory** is the build directory (which must not already be initialised, nor itself be a source directory - in-tree builds are rejected).
+- Otherwise, if the **current directory** contains a `Jinxfile`, then the current directory is the **source** and `<dir>` is a **new** build directory to create (it must not already exist; intermediate parents are created as needed).
+
+If neither location has a `Jinxfile`, `init` errors out. Any further arguments of the form `KEY=VALUE` are written into the build directory's `.jinx-parameters` prefixed with `JINX_`.
 
 Usage:
 
 ```sh
-jinx init <source-dir> [KEY=VALUE]...
+jinx init <dir> [KEY=VALUE]...
 ```
 
-Example:
+Examples:
 
 ```sh
+# <dir> is the source; the current directory becomes the build directory
 mkdir build && cd build
 ../source/jinx init ../source ARCH=x86_64
+
+# the current directory is the source; <dir> is created as the build directory
+cd source
+./jinx init ../build ARCH=x86_64
 ```
 
-This produces a `.jinx-parameters` file containing at minimum `JINX_SOURCE_DIR` and `JINX_ARCH` (which defaults to `$(uname -m)` if not overridden via `ARCH=...`). Any extra arguments become `JINX_<KEY>="<VALUE>"`.
+This produces a `.jinx-parameters` file in the build directory containing at minimum `JINX_SOURCE_DIR` and `JINX_ARCH` (which defaults to `$(uname -m)` if not overridden via `ARCH=...`). Any extra arguments become `JINX_<KEY>="<VALUE>"`. In the first form `JINX_SOURCE_DIR` is recorded exactly as passed (a relative path stays relative to the build directory, resolved when Jinx runs); in the second form it is recorded as an absolute path.
 
 >[!note]
 >To "deinitialise" a build directory, simply remove `.jinx-parameters`. There is no separate `deinit` command.

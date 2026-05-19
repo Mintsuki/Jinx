@@ -82,21 +82,38 @@ cmd_help() {
 }
 
 cmd_init() {
-    if [[ ! -f "$1/Jinxfile" ]]; then
-        die "$0: Provided source directory contains no Jinxfile"
+    if [[ -z ${1-} ]]; then
+        die "$0: init requires a directory argument"
     fi
 
-    local srcdir="$1"
+    local srcdir
+    local builddir
 
-    if [[ -f .jinx-parameters ]]; then
-        die "$0: Current directory already initialised, run '$0 deinit' first"
+    if [[ -f "$1/Jinxfile" ]]; then
+        # <dir> is the source directory; the current directory is the build directory.
+        local srcdir="$1"
+        local builddir="$(pwd -P)"
+    elif [[ -f Jinxfile ]]; then
+        # The current directory is the source; <dir> is a build directory to create.
+        if [[ -e "$1" ]]; then
+            die "$0: '$1' already exists; when the current directory is the source, <dir> must be a new directory to create as the build directory"
+        fi
+        local srcdir="$(pwd -P)"
+        mkdir -p "$1"
+        local builddir="$(cd "$1" && pwd -P)"
+    else
+        die "$0: could not find a Jinxfile in '$1' or in the current directory"
     fi
 
-    if [[ -f Jinxfile ]]; then
+    if [[ -f "${builddir}/.jinx-parameters" ]]; then
+        die "$0: '${builddir}' is already initialised; remove its .jinx-parameters first"
+    fi
+
+    if [[ -f "${builddir}/Jinxfile" ]]; then
         die "$0: In-tree builds are not supported"
     fi
 
-    cat <<EOF >.jinx-parameters
+    cat <<EOF >"${builddir}/.jinx-parameters"
 #! /bin/sh
 
 JINX_SOURCE_DIR="${srcdir}"
@@ -107,10 +124,10 @@ EOF
 
     local p
     for p in "$@"; do
-        printf 'JINX_%s="%s"\n' "${p%%=*}" "${p#*=}" >>.jinx-parameters
+        printf 'JINX_%s="%s"\n' "${p%%=*}" "${p#*=}" >>"${builddir}/.jinx-parameters"
     done
 
-    echo "Initialised with '${srcdir}' as source directory"
+    echo "Initialised '${builddir}' as build directory with '${srcdir}' as source directory"
 }
 
 case "$1" in
