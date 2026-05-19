@@ -753,9 +753,21 @@ do_tarball_fetch() {
         local var_name="$1"
         local checksum_value="$2"
         if [[ -n ${current_recipe_file} && -f ${current_recipe_file} ]]; then
-            # Match `var=?`, `var="?"`, or `var='?'`
-            # with optional surrounding whitespace, preserving whatever quoting style was used.
-            sed -i -E "s#^([[:space:]]*${var_name}=)(\"|')?\\?(\"|')?([[:space:]]*)\$#\\1\\2${checksum_value}\\3\\4#" "${current_recipe_file}"
+            # Replace the first `var=?`, `var="?"` or `var='?'` placeholder,
+            # preserving indentation and quoting style.
+            local _re='^([[:space:]]*)'"${var_name}"'=("?|'\''?)[?]("?|'\''?)([[:space:]]*)$'
+            make_temp
+            local _out="${tmp}"
+            local _done=no
+            local line
+            while IFS= read -r line || [[ -n ${line} ]]; do
+                if [[ ${_done} == no && ${line} =~ $_re ]]; then
+                    local line="${BASH_REMATCH[1]}${var_name}=${BASH_REMATCH[2]}${checksum_value}${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
+                    local _done=yes
+                fi
+                printf '%s\n' "${line}"
+            done <"${current_recipe_file}" >"${_out}"
+            mv "${_out}" "${current_recipe_file}"
         else
             die "* error: cannot autofill ${var_name} for ${name}: recipe file unknown"
         fi
