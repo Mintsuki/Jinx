@@ -124,7 +124,7 @@ example-build/
 |-- .jinx-parameters
 |-- builds/        # configure/build/package output for normal recipes
 |-- host-builds/   # configure/build/package output for host recipes
-|-- host-pkgs/     # built host packages, ready to use from the host
+|-- host-pkgs/     # host XBPS package files and the host XBPS repository index
 \-- pkgs/          # XBPS package files and the XBPS repository index
 ```
 
@@ -173,7 +173,7 @@ example: jinx update '*'
 >For all commands that take recipe names, an argument of `'*'` (or any shell glob) can be used in place of an explicit name; Jinx expands it against the relevant recipes directory. This is great for "full" distributions.
 
 >[!tip]
->For commands that operate on packages ([`build`](<#build>), [`rebuild`](<#rebuild>), [`revbump`](<#revbump>), [`regenerate`](<#regenerate>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`.
+>For commands that operate on packages ([`build`](<#build>), [`rebuild`](<#rebuild>), [`revbump`](<#revbump>), [`regenerate`](<#regenerate>), [`update`](<#update>), [`dry-run`](<#dry-run>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`.
 
 #### `init`
 
@@ -207,7 +207,7 @@ Rebuilds the specified package(s) when they are **out of date**. A package is co
 
 The `-b` flag (mnemonic: "build") restores the older behavior: never-built packages are also built. Transitive dependencies needed to satisfy an outdated target are always built regardless of `-b`, since the target's build would otherwise fail.
 
-If invoked with no recipe arguments (other than `-b`), behaves as `update [-b] '*'`.
+If invoked with no recipe arguments (other than `-b`), behaves as `update [-b] '*'`. Accepts the `host:` prefix (e.g. `jinx update 'host:*'`) to update host recipes, which are tracked by their own `host-pkgs/<name>-<version>_<revision>.<host-arch>.xbps` file exactly like normal recipes; the default `'*'` covers normal recipes only (host recipes are still pulled in transitively as host dependencies).
 
 #### `build`
 
@@ -253,7 +253,7 @@ The `-f` flag **forces** the installation, removing any pre-existing version of 
 
 #### `dry-run`
 
-Prints, on a single line space-separated, the topological order of packages that would be built to satisfy the given target(s) (or `'*'` if no target is given). Already-built packages are omitted. Host packages appear with a `host:` prefix immediately before the first regular package that depends on them.
+Prints, on a single line space-separated, the topological order of packages that would be built to satisfy the given target(s) (or `'*'` if no target is given). Already-built packages are omitted. Host packages appear with a `host:` prefix immediately before the first regular package that depends on them. `host:` targets are accepted as well: each (with its transitive host dependencies) is previewed in host topological order, also `host:`-prefixed.
 
 This is useful for scripting (for example, building one package at a time in CI to keep memory low) and for quickly inspecting what an `update` will do without actually building anything.
 
@@ -291,21 +291,21 @@ A recipe is rebuilt under any of these conditions:
 
 1. You explicitly run [`build`](<#build>) or [`rebuild`](<#rebuild>) on it. `build` always re-runs the recipe's `build()` + `package()` stages (skipping `configure()` if the build directory still exists from a previous run); `rebuild` additionally removes the build directory first so `configure()` reruns from scratch.
 2. You run [`update`](<#update>) (or `update '*'`) and the recipe's current `name-version_revision.xbps` is missing.
-3. The recipe's `version` or `revision` changed since it was last built. The expected XBPS filename no longer matches any existing artifact, so the file appears "missing" - `update` will then rebuild it, and `do_pkg`'s internal `.built` marker mismatch will additionally clean the unpacked source tree, forcing a fresh fetch/patch/prepare for the next build.
+3. The recipe's `version` or `revision` changed since it was last built. The expected XBPS filename no longer matches any existing artifact, so the file appears "missing" - `update` will then rebuild it, and `do_pkg`'s internal `.built` marker mismatch will additionally clean the unpacked source tree, forcing a fresh fetch/patch/prepare for the next build. Host recipes behave identically: `do_host_pkg` uses a `.host-built` marker and the `host-pkgs/<name>-<version>_<revision>.<host-arch>.xbps` filename in exactly the same way.
 
 ### Dependency walking
 
-All build-driving commands walk **downward** through the dependency tree, rebuilding anything whose XBPS file (or, for host deps, `host-pkgs/<pkg>/` directory) is missing along the way:
+All build-driving commands walk **downward** through the dependency tree, rebuilding anything whose XBPS file is missing along the way - host deps use their own `host-pkgs/<name>-<version>_<revision>.<host-arch>.xbps` file, just as normal recipes use `pkgs/`:
 
 - [`build <pkg>`](<#build>) / [`rebuild <pkg>`](<#rebuild>) iterate each direct dep and host-dep of `<pkg>`, recursing so that any missing artifact in the closure is rebuilt before `<pkg>` itself.
 - [`update <pkg>`](<#update>) performs the same walk, gated on `<pkg>` itself being missing; the walk uses one topological sort over `<pkg>`'s entire transitive closure.
 - [`dry-run`](<#dry-run>) performs the same walk in preview mode and prints what *would* be rebuilt, in build order.
 
-Topological sorting is required for correctness: before any recipe builds, every transitive dep of it must already have its XBPS file in `pkgs/`, because `do_pkg` uses `xbps-install` to populate the build sysroot. Sorting deps-first ensures that is always the case.
+Topological sorting is required for correctness: before any recipe builds, every transitive dep of it must already have its XBPS file in `pkgs/` (or, for host deps, `host-pkgs/`), because `prepare_container` uses `xbps-install` to populate the build sysroot from `pkgs/` and the container's `/usr/local` from `host-pkgs/`. Sorting deps-first ensures that is always the case.
 
 ### Reverse dependencies are *not* automatically rebuilt
 
-If you bump a library's `version` or `revision`, Jinx will rebuild that library, but **not** packages that depend on it. The dependents' XBPS files still exist with their original versions, so all the commands above (including `update '*'`) consider them already built. Jinx does not track which artifacts were built against which others.
+If you bump a library's `version` or `revision`, Jinx will rebuild that library, but **not** packages that depend on it. The dependents' XBPS files still exist with their original versions, so all the commands above (including `update '*'`) consider them already built. Jinx does not track which artifacts were built against which others. This applies symmetrically to host recipes (which are now ordinary XBPS packages too): bumping a host recipe does not rebuild its host-dependents.
 
 When a library's ABI/soname changes and its dependents need recompiling, the conventional workflow (matching xbps-src and PKGBUILD-style systems) is:
 
@@ -904,7 +904,7 @@ build() {
 
 #### `package()`
 
-Final stage in a recipe. After all other logic has been run, `package()` installs the build results into the recipe's package directory, which Jinx then turns into an XBPS package (for normal recipes) or leaves under `host-pkgs/` (for host recipes). The location to install the build results into is given by the `dest_dir` variable.
+Final stage in a recipe. After all other logic has been run, `package()` installs the build results into the recipe's package directory, which Jinx then turns into an XBPS package - in `pkgs/` for normal recipes, in `host-pkgs/` for host recipes. The location to install the build results into is given by the `dest_dir` variable.
 
 Example:
 
@@ -936,7 +936,7 @@ In addition to the recipe's own [Properties](<#properties>) and anything the [Ji
 | `source_dir` | Path to the unpacked source tree (e.g. `/base_dir/sources/<name>` for normal recipes, `/base_dir/host-sources/<name>` for host recipes, inside the container). |
 | `prefix` | Install prefix. `/usr` for normal recipes, `/usr/local` for host recipes. |
 | `sysroot` | Path to the populated sysroot in the container (`/sysroot`). |
-| `dest_dir` | Where `package()` should `make install` to. Jinx packs this into an XBPS file (normal recipes) or moves it under `host-pkgs/<name>/` (host recipes). |
+| `dest_dir` | Where `package()` should `make install` to. Jinx packs this into an XBPS file: `pkgs/` for normal recipes, `host-pkgs/` for host recipes. |
 | `parallelism` | Suggested `make -j` value. From `JINX_PARALLELISM` or auto-detected. |
 | `base_dir` | The project's source directory. `/base_dir` inside the container; absolute host path outside. |
 | `build_dir` | The build directory. `/build_dir` inside the container; absolute host path outside. |
@@ -950,11 +950,13 @@ Located in `host-recipes/`, host recipes describe packages that should be built 
 
 Host recipes can declare their own sources inline (`tarball_url`, `git_url`, `source_dir`, `early_prepare()`, `prepare()`, `source_*` properties, etc.), exactly the same way normal recipes do. Alternatively, they can pull sources from another recipe via [`from_source`](<#from_source>) (resolving against `recipes/`) or [`from_host_source`](<#from_host_source>) (resolving against `host-recipes/`, useful when several host recipes need to share a single source tree).
 
+Host recipes are built into XBPS packages just like normal recipes, kept in `host-pkgs/` with its own XBPS repository index. The package filename is `<name>-<version>_<revision>.<host-arch>.xbps`, where `<host-arch>` is the build machine's architecture (`uname -m`) - host tools are native to the build machine, so this is independent of `JINX_ARCH` (the target arch). When a recipe needs host dependencies, Jinx `xbps-install`s them on the fly into the build container's `/usr/local` during container preparation, exactly the way normal `deps` are installed into the sysroot; `hostrundeps` are recorded as the host package's XBPS run-dependencies. Host recipes get a `.host-built` marker that is the exact counterpart of a normal recipe's `.built` (used to clean the unpacked source tree when `version`/`revision` changes, and gated off for `from_source`/`from_host_source` consumers in the same way). Consequently a `version`/`revision` bump on a host recipe triggers a rebuild, and [`update`](<#update>)/[`dry-run`](<#dry-run>)/[`build`](<#build>)/[`rebuild`](<#rebuild>) treat host recipes by their XBPS file identically to normal recipes.
+
 >[!warning]
 >Linking against dynamic shared libraries *may* have unexpected behaviour when the resulting binary is run from the host: it could try to load a library that is not installed on the host. Static linking, or relying solely on libraries provided by `imagedeps`, is the safer route.
 
 >[!note]
->Outputs from host recipes end up in `host-pkgs/<name>/` (relative to the build directory) and can be run from there. For example: `./host-pkgs/limine/usr/local/bin/limine bios-install testos.iso`.
+>Outputs from host recipes are XBPS package files under `host-pkgs/` (relative to the build directory), e.g. `host-pkgs/limine-<version>_<revision>.<host-arch>.xbps`. Jinx installs them into the container automatically when building dependents. To run a host tool directly on the host, extract the package first (an XBPS file is a zstd-compressed tar archive), for example: `mkdir -p limine-host && zstdcat host-pkgs/limine-*.xbps | tar -x -C limine-host && ./limine-host/usr/local/bin/limine bios-install testos.iso`.
 
 ### Patches
 

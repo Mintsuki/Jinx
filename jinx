@@ -168,6 +168,11 @@ else
     parallelism="$JINX_PARALLELISM"
 fi
 
+# Architecture tag for host packages. Host recipes build native tools that run
+# on the build machine, so they are keyed on the build host's arch, independent
+# of JINX_ARCH (which is the target arch and may differ for cross builds).
+host_arch="$(uname -m)"
+
 if [[ ${in_container} == false ]]; then
     build_dir="$(pwd -P)"
 else
@@ -535,15 +540,6 @@ run_in_container1() {
     rm "${run_in_cont1_root}/etc/resolv.conf"
 }
 
-check_duplicates() {
-    local elem
-    for elem in $(cd "$1" && find .); do
-        if [[ -f "$2/${elem}" || -L "$2/${elem}" ]]; then
-            return 1
-        fi
-    done
-}
-
 prepare_container() {
     cd "${build_dir}"
 
@@ -576,13 +572,17 @@ prepare_container() {
     if [[ $JINX_NATIVE_MODE == yes && -z $cross_compile ]]; then
         imgroot="${sysroot}"
     else
+        make_temp -d
+        local host_root="${tmp}"
         local hostdep
         for hostdep in "${!_hostdeps_collected[@]}"; do
-            if ! check_duplicates "${build_dir}/host-pkgs/${hostdep}/usr/local" "${container_pkgs}"; then
-                die "jinx: error: Dependency '${hostdep}' contains file confilcts"
-            fi
-            cp -Pplr "${build_dir}/host-pkgs/${hostdep}/usr/local/." "${container_pkgs}/"
+            XBPS_ARCH=invalid \
+            XBPS_TARGET_ARCH="${host_arch}" \
+                xbps-install -y -r "${host_root}" -R "${build_dir}"/host-pkgs "${hostdep}" >"${tmp_stdout}" 2>"${tmp_stderr}" \
+            || (echo "jinx: xbps-install (host deps) failed! stdout:" && sed 's/^/\- /' "${tmp_stdout}" && echo jinx: stderr: && sed 's/^/\- /' "${tmp_stderr}" && exit 17)
         done
+        container_pkgs="${host_root}/usr/local"
+        mkdir -p "${container_pkgs}"
 
         imagedeps="$(echo "${imagedeps}" | xargs -n1 | sort -u | xargs)"
 
@@ -1155,6 +1155,7 @@ clean_sources() {
     force_remove "${base_dir}"/${_sources_root}/$1.patched
     force_remove "${base_dir}"/${_sources_root}/$1.prepared
     force_remove "${base_dir}"/${_sources_root}/$1.built
+    force_remove "${base_dir}"/${_sources_root}/$1.host-built
 }
 
 do_source() {
@@ -1291,10 +1292,25 @@ do_host_pkg() {
     echo "* building host package: $name"
 
     if [[ -n ${from_source} ]]; then
+        local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+    fi
+
+    if [[ ! -f "${build_dir}/host-pkgs/${name}-${version}_${revision}.${host_arch}.xbps" ]]; then
+        force_remove "${build_dir}"/host-builds/"$1"
+        if [[ -z ${from_source} ]] \
+           && [[ -f "${base_dir}/${_sources_root}/$1.host-built" ]] \
+           && [[ $(cat "${base_dir}/${_sources_root}/$1.host-built") != "${version}_${revision}" ]]; then
+            tracked_subshell 'clean_sources "${name}"'
+        fi
+    fi
+
+    if [[ -n ${from_source} ]]; then
         tracked_subshell 'do_source "${from_source}" "${_from_source_dir}"'
     else
         tracked_subshell 'do_source "${name}" host-recipes'
     fi
+
+    echo "${version}_${revision}" >"${base_dir}"/${_sources_root}/$1.host-built
 
     local cross_compile=yes
     local container_pkgs=
@@ -1312,6 +1328,32 @@ do_host_pkg() {
     run_in_container internal-package-host $1
 
     destroy_container
+
+    local xbps_deps=""
+    local hostrundep
+    for hostrundep in ${hostrundeps}; do
+        local xbps_deps="${xbps_deps} ${hostrundep}>=0.0"
+    done
+
+    local dest_dir="${build_dir}/host-pkgs/${name}"
+
+    cd "${build_dir}"/host-pkgs
+        XBPS_ARCH=invalid \
+        XBPS_TARGET_ARCH="${host_arch}" \
+    xbps-create \
+        -A ${host_arch} \
+        -s ${name} \
+        -n ${name}-${version}_${revision} \
+        -D "${xbps_deps}" \
+        "${dest_dir}"
+
+    force_remove "${dest_dir}"
+
+        XBPS_ARCH=invalid \
+        XBPS_TARGET_ARCH="${host_arch}" \
+    xbps-rindex \
+        -a "${build_dir}"/host-pkgs/${name}-${version}_${revision}.${host_arch}.xbps \
+        -f
 
     if [[ ${JINX_CLEAN_WORKDIRS} == yes ]]; then
         if [[ ${clean_workdirs} != no ]]; then
@@ -1451,8 +1493,21 @@ do_build_if_needed() {
     fi
 }
 
+host_pkg_filename() {
+    eval "$(include_recipe "${base_dir}"/host-recipes/$1)"
+    if [[ -n ${from_source} ]]; then
+        local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+    fi
+    echo "${name}-${version}_${revision}.${host_arch}.xbps"
+}
+
 do_host_build_if_needed() {
-    if [[ ! -d "${build_dir}/host-pkgs/${hostdep}" ]]; then
+    eval "$(include_recipe "${base_dir}"/host-recipes/$1)"
+    if [[ -n ${from_source} ]]; then
+        local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+    fi
+
+    if [[ ! -f "${build_dir}/host-pkgs/${name}-${version}_${revision}.${host_arch}.xbps" ]]; then
         tracked_subshell 'do_host_pkg "'$1'"'
     fi
 }
@@ -1490,6 +1545,27 @@ do_update() {
     done
 }
 
+do_host_update() {
+    local with_build="$1"
+    shift
+    eval "$(include_recipe "${base_dir}"/host-recipes/$1)"
+    if [[ -n ${from_source} ]]; then
+        local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+    fi
+
+    # Up to date already? Nothing to do.
+    if [[ -f "${build_dir}/host-pkgs/${name}-${version}_${revision}.${host_arch}.xbps" ]]; then
+        return 0
+    fi
+
+    # Not previously built? Skip unless caller asked to build missing ones.
+    if [[ ${with_build} != yes ]] && ! compgen -G "${build_dir}/host-pkgs/${name}-*_*.${host_arch}.xbps" >/dev/null; then
+        return 0
+    fi
+
+    tracked_subshell 'do_host_pkg "'$1'"'
+}
+
 cmd_update() {
     local with_build=no
     if [[ ${1-} == "-b" ]]; then
@@ -1503,9 +1579,15 @@ cmd_update() {
     local ppkg
     for ppkg in "$@"; do
         local pkg
-        for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
-            tracked_subshell 'do_update "${with_build}" "${pkg}"'
-        done
+        if [[ ${ppkg} == host:* ]]; then
+            for pkg in $(cd "${base_dir}/host-recipes" && echo ${ppkg#host:}); do
+                tracked_subshell 'do_host_update "${with_build}" "${pkg}"'
+            done
+        else
+            for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
+                tracked_subshell 'do_update "${with_build}" "${pkg}"'
+            done
+        fi
     done
 }
 
@@ -1516,6 +1598,42 @@ cmd_dry_run() {
     # and only if they haven't been mentioned before.
     if [[ -z ${1-} ]]; then
         set -- '*'
+    fi
+
+    # Split host targets ('host:' prefix) from normal ones; the normal
+    # algorithm below only sees normal recipes, host targets are previewed
+    # separately in host topological order.
+    local -a host_globs=() normal_args=()
+    local a
+    for a in "$@"; do
+        if [[ ${a} == host:* ]]; then
+            host_globs+=("${a#host:}")
+        else
+            normal_args+=("${a}")
+        fi
+    done
+    set -- ${normal_args[@]+"${normal_args[@]}"}
+
+    local host_pending=""
+    if (( ${#host_globs[@]} > 0 )); then
+        local -A _hp_seen
+        local host_order=""
+        local hg hpkg _ho
+        for hg in "${host_globs[@]}"; do
+            for hpkg in $(cd "${base_dir}/host-recipes" && echo ${hg}); do
+                [[ -f "${base_dir}/host-recipes/${hpkg}/recipe" ]] || continue
+                for _ho in $(tracked_subshell 'get_hostdeps_builddeps "${hpkg}"'); do
+                    [[ -n ${_hp_seen[$_ho]+x} ]] && continue
+                    _hp_seen[$_ho]=1
+                    local host_order="${host_order} ${_ho}"
+                done
+            done
+        done
+        for _ho in ${host_order}; do
+            if [[ ! -f "${build_dir}/host-pkgs/$(host_pkg_filename "${_ho}")" ]]; then
+                local host_pending="${host_pending} host:${_ho}"
+            fi
+        done
     fi
 
     # Expand all package patterns upfront
@@ -1604,7 +1722,7 @@ cmd_dry_run() {
             local hostdep
             for hostdep in ${pkg_hostdeps[$dep]}; do
                 if [[ ${emitted_hostdeps} != *" ${hostdep} "* ]]; then
-                    if [[ ! -d "${build_dir}/host-pkgs/${hostdep}" ]]; then
+                    if [[ ! -f "${build_dir}/host-pkgs/$(host_pkg_filename "${hostdep}")" ]]; then
                         local pending_list="${pending_list} host:${hostdep}"
                     fi
                     local emitted_hostdeps="${emitted_hostdeps}${hostdep} "
@@ -1616,7 +1734,7 @@ cmd_dry_run() {
     done
 
     # Print packages preserving order, space separated, with global deduplication
-    printf '%s\n' ${pending_list} | awk '!seen[$0]++{printf "%s ", $0} END{print ""}'
+    printf '%s\n' ${host_pending} ${pending_list} | awk '!seen[$0]++{printf "%s ", $0} END{print ""}'
 }
 
 cmd_download() {
