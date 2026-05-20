@@ -2259,6 +2259,8 @@ reinit_container() {
 
     sed "s/-lxml2/-lxml2 -llzma -lm/g" config.mk >config.mk.sed
     mv config.mk.sed config.mk
+    sed "s/-lssl/-lssl -lcrypto/g" config.mk >config.mk.sed
+    mv config.mk.sed config.mk
 
     if command -v gmake >/dev/null 2>&1; then
         local MAKE=gmake
