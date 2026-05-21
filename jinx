@@ -48,23 +48,22 @@ jinx_minor_ver="1"
 
 jinx_version="${jinx_major_ver}.${jinx_minor_ver}"
 
-XBPS_VERSION=0.60.7
-
 # Pre-built static musl-linked xbps binaries are fetched from the
-# xbps-static-builds CI repo at the URL+release tag below. The release publishes
-# one tarball per supported arch, named xbps-${XBPS_VERSION}-${uname-m}.tar.gz.
-# armel, loongarch64, and mips64el are not covered (no Alpine container
-# image on Docker Hub).
-XBPS_RELEASE_URL_BASE="https://github.com/Mintsuki/xbps-static-builds/releases/download/${XBPS_VERSION}"
+# xbps-static-builds CI repo at the timestamp-tagged release below. The release
+# publishes one tarball per supported arch, named
+# xbps-static-bin-linux-${uname-m}.tar.gz, each wrapping a top-level directory
+# of the same stem. armel, loongarch64, and mips64el are not covered (no Alpine
+# container image on Docker Hub).
+XBPS_RELEASE_URL_BASE="https://github.com/Mintsuki/xbps-static-builds/releases/download/20260521T170342Z"
 declare -A XBPS_SHA256=(
-    [x86_64]=e946379e7e44df30c16e36ad60998f60d358fab66e7fbc1231e2b68d1871b16e
-    [aarch64]=c56bac3979c805a77c09afc50335e0d3d7a8673d788e031023a2c8f49491ff3e
-    [armv7l]=a4fdb2c7a348722ee4998479f948525926fa7559ba3ca9f29f53741ff721035b
-    [armv6l]=86d59f0f3521892acf2ecabc899ee8ebd9f98415255c9953e8858993fb40de6e
-    [i686]=aefbaadca90ba1bb391b6f5f67d40aace0ae38dfdcf1ea80200edd09bdd3fcca
-    [ppc64le]=b52dfa55b7e3f4f3e76a8d65db91a663a0be1177e85a322aa9f0236e04d45292
-    [riscv64]=a78f03eee33d340305645a2928f696823d1f01c02bba9f11e38603fcad8499e7
-    [s390x]=ab9ac2c8a64d9501ad95f67acf5e0ea68b2368fdf6ee8e4dc4104cb01567f2a2
+    [x86_64]=c41de4470f06d3e2d662e4793bd454e9e5e20ab36a3494e12da54101de1db196
+    [aarch64]=6aa7e9764d43e497167b4faec53a4f53726bb109b93d9338e25358085053f336
+    [armv7l]=0f4c11f1904cb63d9f2ba8d3beb52395ccbe8c895e9961191b90dde793a62fcf
+    [armv6l]=dce0a59b03ad839b21d72dd333321739836608fe006eb9e375efacb36c58af07
+    [i686]=f748d96c12a345078e29b6b6eebb8a2641fe2254512e5418a0a4c640ae9437cb
+    [ppc64le]=83e1d0a5b8823d3fc436a5d74ba2f358e3dcc5ff271f0696c457779537a4c87a
+    [riscv64]=b8855d16114e1af84134ba2eb0e99202746ea38ce6233922e244e2c3a8058d9b
+    [s390x]=b5992ff37a3b2f1ef7542eac00714b687ebb3ddd045adec9679270e700e2b53f
 )
 
 # Pre-built nochown.so (LD_PRELOAD shim that no-ops every chown variant) is
@@ -2354,14 +2353,19 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
         die "Jinx: no pre-built xbps tarball published for host arch '${host_arch}' (see XBPS_SHA256 in jinx)"
     fi
 
-    local xbps_tarball="xbps-${XBPS_VERSION}-${host_arch}.tar.gz"
+    local xbps_dirname="xbps-static-bin-linux-${host_arch}"
+    local xbps_tarball="${xbps_dirname}.tar.gz"
     wget -O "${JINX_CACHE_DIR}/${xbps_tarball}" "${XBPS_RELEASE_URL_BASE}/${xbps_tarball}"
     if ! "${SHA256_COMMAND}" "${JINX_CACHE_DIR}/${xbps_tarball}" | grep "${xbps_sha256}" >/dev/null 2>&1; then
         die "Jinx: Failed to verify xbps tarball"
     fi
 
-    mkdir -p "${JINX_CACHE_DIR}/xbps"
-    ( cd "${JINX_CACHE_DIR}/xbps" && gunzip < "../${xbps_tarball}" | tar -xf - )
+    # The tarball wraps everything in a top-level ${xbps_dirname}/ dir; extract
+    # then rename so ${JINX_CACHE_DIR}/xbps/{bin,lib,...} are where PATH and
+    # LD_LIBRARY_PATH already expect them.
+    ( cd "${JINX_CACHE_DIR}" && gunzip < "${xbps_tarball}" | tar -xf - )
+    force_remove "${JINX_CACHE_DIR}/xbps"
+    mv "${JINX_CACHE_DIR}/${xbps_dirname}" "${JINX_CACHE_DIR}/xbps"
     rm "${JINX_CACHE_DIR}/${xbps_tarball}"
 }
 
