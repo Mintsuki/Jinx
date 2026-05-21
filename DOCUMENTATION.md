@@ -65,7 +65,6 @@ Ensure the following prerequisites have been acquired:
 - A POSIX-compatible shell located at `/bin/sh` (used by Jinx internally to drive `unshare`/`chroot` and to bootstrap the container environment).
 - `awk`.
 - LLVM Clang, or the GNU C Compiler.
-- `curl`.
 - `find` and `xargs` from a `findutils` package.
 - `git`.
 - GNU `make`.

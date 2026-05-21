@@ -1846,7 +1846,7 @@ cmd_download() {
     echo "* fetching repository index..."
     make_temp
     local repodata_path="${tmp}"
-    curl -fL -o "${repodata_path}" "${JINX_REPO_URL}/${JINX_ARCH}-repodata" \
+    wget -O "${repodata_path}" "${JINX_REPO_URL}/${JINX_ARCH}-repodata" \
         || die "$0: failed to fetch repository index from ${JINX_REPO_URL}"
 
     make_temp
@@ -1859,7 +1859,7 @@ cmd_download() {
         echo "* downloading ${pkg_file}..."
         make_temp
         local dl_path="${tmp}"
-        curl -fL -o "${dl_path}" "${JINX_REPO_URL}/${pkg_file}" \
+        wget -O "${dl_path}" "${JINX_REPO_URL}/${pkg_file}" \
             || die "$0: failed to download ${pkg_file} from ${JINX_REPO_URL}"
 
         # Verify SHA256 against repodata
@@ -2357,7 +2357,7 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
     fi
 
     local xbps_tarball="xbps-${XBPS_VERSION}-${host_arch}.tar.gz"
-    curl -Lo "${JINX_CACHE_DIR}/${xbps_tarball}" "${XBPS_RELEASE_URL_BASE}/${xbps_tarball}"
+    wget -O "${JINX_CACHE_DIR}/${xbps_tarball}" "${XBPS_RELEASE_URL_BASE}/${xbps_tarball}"
     if ! "${SHA256_COMMAND}" "${JINX_CACHE_DIR}/${xbps_tarball}" | grep "${xbps_sha256}" >/dev/null 2>&1; then
         die "Jinx: Failed to verify xbps tarball"
     fi
