@@ -23,17 +23,12 @@ An example OS using Jinx is [Gloire](https://codeberg.org/Ironclad/Gloire).
 - grep
 - gzip
 - patch
-- perl
-- pkg-config (or `pkgconf`)
 - sed
 - tar
 - wget
 - zstd
 - procps or equivalent (for `free`)
 - util-linux or equivalent (for `unshare`)
-- `libarchive(-dev)`
-- `libssl(-dev)`/`openssl(-dev)`
-- `zlib(-dev)` (AKA `zlib1g-dev` on Debian-based distros)
 
 ### Documentation
 

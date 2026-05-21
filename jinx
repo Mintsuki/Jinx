@@ -49,7 +49,23 @@ jinx_minor_ver="1"
 jinx_version="${jinx_major_ver}.${jinx_minor_ver}"
 
 XBPS_VERSION=0.60.7
-XBPS_SHA256SUM=ec8c2e4d595863b5748c10d9ada1d51ac1da6f910a9d31682acd1a477310c64e
+
+# Pre-built static musl-linked xbps binaries are fetched from the
+# xbps-static-builds CI repo at the URL+release tag below. The release publishes
+# one tarball per supported arch, named xbps-${XBPS_VERSION}-${uname-m}.tar.gz.
+# armel, loongarch64, and mips64el are not covered (no Alpine container
+# image on Docker Hub).
+XBPS_RELEASE_URL_BASE="https://github.com/Mintsuki/xbps-static-builds/releases/download/${XBPS_VERSION}"
+declare -A XBPS_SHA256=(
+    [x86_64]=e946379e7e44df30c16e36ad60998f60d358fab66e7fbc1231e2b68d1871b16e
+    [aarch64]=c56bac3979c805a77c09afc50335e0d3d7a8673d788e031023a2c8f49491ff3e
+    [armv7l]=a4fdb2c7a348722ee4998479f948525926fa7559ba3ca9f29f53741ff721035b
+    [armv6l]=86d59f0f3521892acf2ecabc899ee8ebd9f98415255c9953e8858993fb40de6e
+    [i686]=aefbaadca90ba1bb391b6f5f67d40aace0ae38dfdcf1ea80200edd09bdd3fcca
+    [ppc64le]=b52dfa55b7e3f4f3e76a8d65db91a663a0be1177e85a322aa9f0236e04d45292
+    [riscv64]=a78f03eee33d340305645a2928f696823d1f01c02bba9f11e38603fcad8499e7
+    [s390x]=ab9ac2c8a64d9501ad95f67acf5e0ea68b2368fdf6ee8e4dc4104cb01567f2a2
+)
 
 debootstrap_version=1.0.143
 debootstrap_sha256sum=15652a91eb1cf04c24c485bbaaf36e0528132bded8475820344a8129c7eaca01
@@ -2236,46 +2252,6 @@ reinit_container() {
         fi
     fi
 
-    # Build xbps
-    wget -O "${JINX_CACHE_DIR}/xbps-${XBPS_VERSION}.tar.gz" https://github.com/void-linux/xbps/archive/${XBPS_VERSION}.tar.gz
-    if ! "${SHA256_COMMAND}" "${JINX_CACHE_DIR}/xbps-${XBPS_VERSION}.tar.gz" | grep "${XBPS_SHA256SUM}" >/dev/null 2>&1; then
-        die "Jinx: Failed to verify XBPS tarball"
-    fi
-
-    tracked_subshell '
-
-    cd "$JINX_CACHE_DIR"
-    tar -zxf xbps-${XBPS_VERSION}.tar.gz
-    cd xbps-${XBPS_VERSION}
-
-    sed "s/&& DEBUG=yes/&& DEBUG=no/g" configure >configure.sed
-    mv configure.sed configure
-    chmod +x configure
-
-    CFLAGS="-O2 -pipe -Wno-error" ./configure --verbose --prefix="$JINX_CACHE_DIR/xbps" --localstatedir=/var
-
-    sed "/DBDIR/d" data/Makefile >data/Makefile.sed
-    mv data/Makefile.sed data/Makefile
-
-    sed "s/-lxml2/-lxml2 -llzma -lm/g" config.mk >config.mk.sed
-    mv config.mk.sed config.mk
-    sed "s/-lssl/-lssl -lcrypto/g" config.mk >config.mk.sed
-    mv config.mk.sed config.mk
-
-    if command -v gmake >/dev/null 2>&1; then
-        local MAKE=gmake
-    else
-        local MAKE=make
-    fi
-
-    ${MAKE} -j${parallelism}
-    ${MAKE} install
-
-    cd ..
-    force_remove xbps-${XBPS_VERSION}*
-
-    '
-
     cat >"$JINX_CACHE_DIR/nochown.c" <<EOF
 #include <stdio.h>
 #include <unistd.h>
@@ -2370,6 +2346,25 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
     if [[ -n ${JINX_CMAKE_PLATFORM-} ]]; then
         cp "${base_dir}/${JINX_CMAKE_PLATFORM}" "${JINX_CACHE_DIR}"/sets/.image/usr/share/cmake-*/Modules/Platform/
     fi
+
+    # Fetch the pre-built static-musl xbps tarball for this host arch from the
+    # xbps-static-builds CI repo, verify, extract. Building xbps locally is
+    # avoided because Debian doesn't ship musl-linked libssl/libarchive/etc.,
+    # and statically linked glibc breaks libfetch's networking via NSS.
+    local xbps_sha256="${XBPS_SHA256[${host_arch}]-}"
+    if [[ -z ${xbps_sha256} || ${xbps_sha256} == "?" ]]; then
+        die "Jinx: no pre-built xbps tarball published for host arch '${host_arch}' (see XBPS_SHA256 in jinx)"
+    fi
+
+    local xbps_tarball="xbps-${XBPS_VERSION}-${host_arch}.tar.gz"
+    curl -Lo "${JINX_CACHE_DIR}/${xbps_tarball}" "${XBPS_RELEASE_URL_BASE}/${xbps_tarball}"
+    if ! "${SHA256_COMMAND}" "${JINX_CACHE_DIR}/${xbps_tarball}" | grep "${xbps_sha256}" >/dev/null 2>&1; then
+        die "Jinx: Failed to verify xbps tarball"
+    fi
+
+    mkdir -p "${JINX_CACHE_DIR}/xbps"
+    ( cd "${JINX_CACHE_DIR}/xbps" && gunzip < "../${xbps_tarball}" | tar -xf - )
+    rm "${JINX_CACHE_DIR}/${xbps_tarball}"
 }
 
 first_use() {

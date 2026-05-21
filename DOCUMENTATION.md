@@ -73,14 +73,12 @@ Ensure the following prerequisites have been acquired:
 - `grep`.
 - `gzip`.
 - `patch`.
-- `pkg-config` (or `pkgconf`).
 - `sed`.
 - `tar`.
 - `wget`.
 - `zstd`.
 - `free` from a `procps` package.
 - `unshare` from a `util-linux` package.
-- `libarchive(-dev)`, `libssl(-dev)`/`openssl(-dev)`, and `zlib(-dev)` (needed to build XBPS the first time).
 
 >[!warning]
 >It is ***imperative*** that jinx be run under Linux, as the container environment relies on non-POSIX Linux features (user namespaces, mount namespaces, `chroot`). You ***will*** run into issues on other systems.
