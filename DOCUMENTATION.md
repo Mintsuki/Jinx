@@ -81,7 +81,7 @@ Ensure the following prerequisites have been acquired:
 >[!warning]
 >It is ***imperative*** that jinx be run under Linux, as the container environment relies on non-POSIX Linux features (user namespaces, mount namespaces, `chroot`). You ***will*** run into issues on other systems.
 
-Download the `jinx` executable script from https://codeberg.org/mintsuki/jinx. Ensure that it is marked as executable with `chmod +x jinx`. Optionally, install it system-wide with `make install` (it accepts the standard `PREFIX` and `DESTDIR` variables). Finally, verify that it is functional with `jinx help` to display the help output.
+Download the `jinx` executable script from https://github.com/Mintsuki/Jinx. Ensure that it is marked as executable with `chmod +x jinx`. Optionally, install it system-wide with `make install` (it accepts the standard `PREFIX` and `DESTDIR` variables). Finally, verify that it is functional with `jinx help` to display the help output.
 
 ## Basic Project Structure
 
