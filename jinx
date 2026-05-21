@@ -67,6 +67,22 @@ declare -A XBPS_SHA256=(
     [s390x]=ab9ac2c8a64d9501ad95f67acf5e0ea68b2368fdf6ee8e4dc4104cb01567f2a2
 )
 
+# Pre-built nochown.so (LD_PRELOAD shim that no-ops every chown variant) is
+# fetched from the nochown CI repo at the timestamp-tagged release below; used
+# inside the build container so apt/debootstrap don't fail when they try to
+# chown to UIDs outside the user namespace's restricted mapping.
+NOCHOWN_RELEASE_URL_BASE="https://github.com/Mintsuki/nochown/releases/download/20260521T175213Z"
+declare -A NOCHOWN_SHA256=(
+    [x86_64]=74330fe145f0e4180e22a9b3ec054c98f854d7a7d9cca034364a12a8d04c576a
+    [aarch64]=45aac7c467f33404f6bbddb1a24cdd5bfc66581e63a87d80233f8dedc7e30479
+    [armv7l]=3209f70a893ef1c59ceff8c50a8c0ab445266aadab88c47d4648f8e75e10df86
+    [armv6l]=45c04e2f8b1f4db00527620c1fbdabf438880377fc26fd95d6283d270147ef39
+    [i686]=c1604dfc56120180f5b097d4ff1d529511a1457ae3aa0e3a28a11a16bb689154
+    [ppc64le]=6f55eb63b27f962f9bfe6f338451e854cb6467ed773aae754882f7e0e277f043
+    [riscv64]=6780c1878715dc8558ad0553def1457c70c5bf133544c419d1bb41d7c2272d82
+    [s390x]=749beba8f4b72338e4b7769e0ed69a2f448e7cdc963cfd1d0a18d679c2f61ba2
+)
+
 debootstrap_version=1.0.143
 debootstrap_sha256sum=15652a91eb1cf04c24c485bbaaf36e0528132bded8475820344a8129c7eaca01
 
@@ -2252,34 +2268,16 @@ reinit_container() {
         fi
     fi
 
-    cat >"$JINX_CACHE_DIR/nochown.c" <<EOF
-#include <stdio.h>
-#include <unistd.h>
-#include <fcntl.h>
-
-int chown(const char *pathname, uid_t owner, gid_t group) {
-    (void)pathname; (void)owner; (void)group;
-    return 0;
-}
-
-int fchown(int fd, uid_t owner, gid_t group) {
-    (void)fd; (void)owner; (void)group;
-    return 0;
-}
-
-int lchown(const char *pathname, uid_t owner, gid_t group) {
-    (void)pathname; (void)owner; (void)group;
-    return 0;
-}
-
-int fchownat(int dirfd, const char *pathname,
-             uid_t owner, gid_t group, int flags) {
-    (void)dirfd; (void)pathname; (void)owner; (void)group; (void)flags;
-    return 0;
-}
-EOF
-    cc -O2 -pipe -std=gnu99 -Wall -Wextra -fPIC -shared -nostdlib "$JINX_CACHE_DIR/nochown.c" -o "$JINX_CACHE_DIR/sets/.image/nochown.so"
-    rm "$JINX_CACHE_DIR/nochown.c"
+    # Fetch the pre-built nochown.so for this host arch, verify, drop it into
+    # the container's rootfs so the LD_PRELOAD references at /nochown.so work.
+    local nochown_sha256="${NOCHOWN_SHA256[${host_arch}]-}"
+    if [[ -z ${nochown_sha256} || ${nochown_sha256} == "?" ]]; then
+        die "Jinx: no pre-built nochown.so published for host arch '${host_arch}' (see NOCHOWN_SHA256 in jinx)"
+    fi
+    wget -O "$JINX_CACHE_DIR/sets/.image/nochown.so" "${NOCHOWN_RELEASE_URL_BASE}/nochown-linux-${host_arch}.so"
+    if ! "${SHA256_COMMAND}" "$JINX_CACHE_DIR/sets/.image/nochown.so" | grep "${nochown_sha256}" >/dev/null 2>&1; then
+        die "Jinx: Failed to verify nochown.so"
+    fi
 
     local DEBOOTSTRAP_ARCH="$(uname -m)"
     case "${DEBOOTSTRAP_ARCH}" in

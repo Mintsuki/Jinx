@@ -14,7 +14,6 @@ An example OS using Jinx is [Gloire](https://codeberg.org/Ironclad/Gloire).
 - `bash` (the script itself is bash)
 - POSIX compatible `/bin/sh` (used inside containers for mount/chroot setup)
 - awk
-- working cc (gcc or clang work)
 - findutils (for `find` and `xargs`)
 - git
 - GNU make

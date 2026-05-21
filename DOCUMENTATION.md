@@ -64,7 +64,6 @@ Ensure the following prerequisites have been acquired:
 - `bash` (the `jinx` script itself is written in bash).
 - A POSIX-compatible shell located at `/bin/sh` (used by Jinx internally to drive `unshare`/`chroot` and to bootstrap the container environment).
 - `awk`.
-- LLVM Clang, or the GNU C Compiler.
 - `find` and `xargs` from a `findutils` package.
 - `git`.
 - GNU `make`.
