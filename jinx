@@ -355,6 +355,10 @@ if [[ ${name} != ${_expected_name} ]]; then
     die "$0: recipe at '${recipe_dir}' must not override 'name' (recipe sets '${name}' but directory is '${_expected_name}'); remove the 'name=' assignment from the recipe"
 fi
 
+if [[ -n ${tarball_url} && -n ${git_url} ]]; then
+    die "$0: recipe '${name}' sets both tarball_url and git_url (mutually exclusive source methods)"
+fi
+
 case "${recipe_dir}" in
     */host-recipes/*) local _from_source_dir=host-recipes ;;
     *) local _from_source_dir=recipes ;;
