@@ -167,7 +167,7 @@ example: jinx update '*'
 >For all commands that take recipe names, an argument of `'*'` (or any shell glob) can be used in place of an explicit name; Jinx expands it against the relevant recipes directory. This is great for "full" distributions.
 
 >[!tip]
->For commands that operate on packages ([`build`](<#build>), [`rebuild`](<#rebuild>), [`revbump`](<#revbump>), [`regenerate`](<#regenerate>), [`update`](<#update>), [`dry-run`](<#dry-run>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`.
+>For commands that operate on recipes ([`build`](<#build>), [`rebuild`](<#rebuild>), [`revbump`](<#revbump>), [`regenerate`](<#regenerate>), [`update`](<#update>), [`dry-run`](<#dry-run>), [`download`](<#download>), [`run-in`](<#run-in>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`. The `install` command, by contrast, only operates on normal recipes.
 
 #### `init`
 
@@ -271,7 +271,11 @@ jinx download <package(s)>
 
 Fetches pre-built XBPS files for the specified package(s) and their transitive dependencies from the URL set in `JINX_REPO_URL` (Jinxfile variable). Each downloaded file's SHA256 is verified against the repository's `index.plist`, and the local repo index is updated.
 
-Errors out if `JINX_REPO_URL` is not set in the `Jinxfile`.
+Accepts the `host:` prefix to fetch host packages instead: `host:` targets are resolved against `host-recipes/`, fetched from `JINX_HOST_REPO_URL` (a separate Jinxfile variable), and dropped into `host-pkgs/` (and walked through `hostdeps`/`hostrundeps` rather than `deps`/`builddeps`). Normal and `host:` targets can be mixed in a single invocation; each group uses its own repo URL and its own arch repodata. Note that the transitive walk stays within one namespace: `jinx download foo` does **not** automatically also fetch foo's `hostdeps` - run `jinx download 'host:*'` (or list specific host packages) to populate `host-pkgs/`.
+
+The two URLs are kept separate so that target and host repos can coexist even in native builds (where `JINX_ARCH == $(uname -m)` and a single flat directory couldn't disambiguate `${arch}-repodata` files for the two namespaces). A typical layout is to publish `<repo-root>/target/` and `<repo-root>/host/` and point each variable at the appropriate subdirectory.
+
+Errors out if `JINX_REPO_URL` is not set when normal packages are requested, or if `JINX_HOST_REPO_URL` is not set when `host:` packages are requested.
 
 #### `run-in`
 
@@ -351,7 +355,8 @@ The full set of Jinx-recognised variables in a `Jinxfile`:
 | `JINX_DEBIAN_SNAPSHOT`  | yes      | Debian snapshot timestamp used to bootstrap the container's base image.                                       |
 | `JINX_BASE_PACKAGES`    | no       | Extra Debian packages to install into the base container image (added to Jinx's default set).                 |
 | `JINX_CMAKE_PLATFORM`   | no       | Path (relative to the source directory) of a CMake platform file to drop into the container's CMake modules.  |
-| `JINX_REPO_URL`         | no       | URL for the [`download`](<#download>) command to fetch pre-built packages from.                               |
+| `JINX_REPO_URL`         | no       | URL for the [`download`](<#download>) command to fetch pre-built target packages from.                        |
+| `JINX_HOST_REPO_URL`    | no       | URL for the [`download`](<#download>) command to fetch pre-built host packages from (when `host:` is used).   |
 
 `JINX_ARCH` is **not** read from the `Jinxfile`; it is set in `.jinx-parameters` (defaulting to `$(uname -m)`, overridable via `jinx init <src> ARCH=...`).
 

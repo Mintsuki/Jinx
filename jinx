@@ -1805,29 +1805,33 @@ cmd_dry_run() {
     printf '%s\n' ${host_pending} ${pending_list} | awk '!seen[$0]++{printf "%s ", $0} END{print ""}'
 }
 
-cmd_download() {
-    if [[ -z ${JINX_REPO_URL-} ]]; then
-        die "$0: JINX_REPO_URL not set in Jinxfile"
-    fi
-
-    if [[ -z ${1-} ]]; then
-        die "$0: download requires at least one package name"
-    fi
+cmd_download_for() {
+    # Args: repo_url recipes_dir pkgs_dir arch glob1 [glob2 ...]
+    local repo_url="$1"
+    local recipes_dir="$2"
+    local pkgs_dir="$3"
+    local arch="$4"
+    shift 4
 
     # Expand package patterns
     local all_packages=""
     local ppkg
     for ppkg in "$@"; do
         local pkg
-        for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
+        for pkg in $(cd "${base_dir}/${recipes_dir}" && echo ${ppkg}); do
             local all_packages="${all_packages} ${pkg}"
         done
     done
 
-    # Collect transitive deps
+    # Collect transitive deps. For normal recipes the relevant edges are
+    # deps+builddeps; for host recipes they are hostdeps+hostrundeps.
     local -A pkg_deps
-    for pkg in $(cd "${base_dir}/recipes" && echo *); do
-        pkg_deps[$pkg]=$(eval "$(include_recipe "${base_dir}/recipes/${pkg}")" && echo "${deps} ${builddeps}")
+    for pkg in $(cd "${base_dir}/${recipes_dir}" && echo *); do
+        if [[ ${recipes_dir} == recipes ]]; then
+            pkg_deps[$pkg]=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/${pkg}")" && echo "${deps} ${builddeps}")
+        else
+            pkg_deps[$pkg]=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/${pkg}")" && echo "${hostdeps} ${hostrundeps}")
+        fi
     done
 
     local -A collected
@@ -1846,31 +1850,31 @@ cmd_download() {
         collect_all_deps "${pkg}"
     done
 
-    # Determine which packages are missing from pkgs/
+    # Determine which packages are missing locally
     local download_list=""
     local dep
     for dep in "${!collected[@]}"; do
-        eval "$(include_recipe "${base_dir}"/recipes/"${dep}")"
+        eval "$(include_recipe "${base_dir}"/${recipes_dir}/"${dep}")"
         if [[ -n ${from_source} ]]; then
             local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
         fi
-        local pkg_filename="${name}-${version}_${revision}.${JINX_ARCH}.xbps"
-        if [[ ! -f "${build_dir}/pkgs/${pkg_filename}" ]]; then
+        local pkg_filename="${name}-${version}_${revision}.${arch}.xbps"
+        if [[ ! -f "${pkgs_dir}/${pkg_filename}" ]]; then
             local download_list="${download_list} ${pkg_filename}"
         fi
     done
 
     if [[ -z ${download_list} ]]; then
-        echo "* all packages already present in pkgs/"
+        echo "* all requested ${recipes_dir} packages already present in ${pkgs_dir##*/}/"
         return
     fi
 
     # Fetch repo index for checksum verification
-    echo "* fetching repository index..."
+    echo "* fetching ${arch} repository index..."
     make_temp
     local repodata_path="${tmp}"
-    wget -O "${repodata_path}" "${JINX_REPO_URL}/${JINX_ARCH}-repodata" \
-        || die "$0: failed to fetch repository index from ${JINX_REPO_URL}"
+    wget -O "${repodata_path}" "${repo_url}/${arch}-repodata" \
+        || die "$0: failed to fetch repository index from ${repo_url}"
 
     make_temp
     local index_plist="${tmp}"
@@ -1882,8 +1886,8 @@ cmd_download() {
         echo "* downloading ${pkg_file}..."
         make_temp
         local dl_path="${tmp}"
-        wget -O "${dl_path}" "${JINX_REPO_URL}/${pkg_file}" \
-            || die "$0: failed to download ${pkg_file} from ${JINX_REPO_URL}"
+        wget -O "${dl_path}" "${repo_url}/${pkg_file}" \
+            || die "$0: failed to download ${pkg_file} from ${repo_url}"
 
         # Verify SHA256 against repodata
         local pkg_name="${pkg_file%%-[0-9]*}"
@@ -1901,15 +1905,46 @@ cmd_download() {
             fi
         fi
 
-        mv "${dl_path}" "${build_dir}/pkgs/${pkg_file}"
+        mv "${dl_path}" "${pkgs_dir}/${pkg_file}"
 
         # Re-index this package
         XBPS_ARCH=invalid \
-        XBPS_TARGET_ARCH="${JINX_ARCH}" \
+        XBPS_TARGET_ARCH="${arch}" \
         xbps-rindex \
-            -a "${build_dir}/pkgs/${pkg_file}" \
+            -a "${pkgs_dir}/${pkg_file}" \
             -f
     done
+}
+
+cmd_download() {
+    if [[ -z ${1-} ]]; then
+        die "$0: download requires at least one package name"
+    fi
+
+    # Split host: targets from normal ones; each group is downloaded against
+    # its own arch repodata, from its own repo URL, into its own pkgs/ tree.
+    local -a host_globs=() normal_args=()
+    local a
+    for a in "$@"; do
+        if [[ ${a} == host:* ]]; then
+            host_globs+=("${a#host:}")
+        else
+            normal_args+=("${a}")
+        fi
+    done
+
+    if (( ${#normal_args[@]} > 0 )); then
+        if [[ -z ${JINX_REPO_URL-} ]]; then
+            die "$0: JINX_REPO_URL not set in Jinxfile"
+        fi
+        cmd_download_for "${JINX_REPO_URL}" recipes "${build_dir}/pkgs" "${JINX_ARCH}" "${normal_args[@]}"
+    fi
+    if (( ${#host_globs[@]} > 0 )); then
+        if [[ -z ${JINX_HOST_REPO_URL-} ]]; then
+            die "$0: JINX_HOST_REPO_URL not set in Jinxfile (required for downloading host packages)"
+        fi
+        cmd_download_for "${JINX_HOST_REPO_URL}" host-recipes "${build_dir}/host-pkgs" "${host_arch}" "${host_globs[@]}"
+    fi
 
     echo "* download complete"
 }
@@ -2453,6 +2488,7 @@ unset JINX_DEBIAN_SNAPSHOT
 unset JINX_BASE_PACKAGES
 unset JINX_CMAKE_PLATFORM
 unset JINX_REPO_URL
+unset JINX_HOST_REPO_URL
 . "${JINX_CONFIG_FILE}"
 
 if [[ -z ${JINX_MAJOR_VER-} ]]; then
