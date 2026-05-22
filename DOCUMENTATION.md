@@ -356,7 +356,7 @@ The full set of Jinx-recognised variables in a `Jinxfile`:
 `JINX_ARCH` is **not** read from the `Jinxfile`; it is set in `.jinx-parameters` (defaulting to `$(uname -m)`, overridable via `jinx init <src> ARCH=...`).
 
 >[!note]
->Helper functions referenced by recipes will be run inside the container, and will *not* run on the host.
+>Helper functions referenced by recipes will be run inside the container, and will *not* run on the host. The `Jinxfile` itself, however, is sourced both on the host and inside the container on every Jinx invocation, so any *top-level* code (outside of function bodies) runs in both contexts - keep top-level code portable and put host- or container-specific work inside helper functions.
 
 ## Environment Variables
 
