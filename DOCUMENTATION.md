@@ -662,7 +662,7 @@ builddeps="autoconf gettext-host"
 - **Optional**.
 - Space-separated list of recipes.
 
-Specifies host recipes that must be built before this recipe will work, primarily for the **build** stage (cross compilers, code generators, etc.). Dependencies in `hostdeps` must **only** be host recipes (i.e. files in `host-recipes/`).
+Specifies host recipes that must be built before this recipe will work; the host package(s) are installed into the build container's `/usr/local` for `configure()`/`build()`/`package()` (cross compilers, code generators, etc.). `hostdeps` are **not** recorded as runtime dependencies of the resulting XBPS package - use [`hostrundeps`](<#hostrundeps>) for that. Must **only** be host recipes (i.e. files in `host-recipes/`).
 
 Example:
 
@@ -680,7 +680,7 @@ hostdeps="gcc binutils"
 - **Optional**.
 - Space-separated list of recipes.
 
-Specifies host recipes that must be available at run time when this recipe is itself used by another recipe (transitive host dependencies). Like `hostdeps`, these must be host recipes only. The split between `hostdeps` and `hostrundeps` lets you express that a host tool needs *another* host tool to run, without requiring every consumer of the first tool to know about the second.
+Like `hostdeps` for the purposes of build-time setup (built first and installed into the container's `/usr/local`), but **additionally** recorded as XBPS runtime dependencies of the produced host package - so any future host package that consumes this one will automatically pull them in. Use these for host tools that this recipe will itself invoke at run time when consumed elsewhere; listing a dependency under `hostrundeps` makes also listing it under `hostdeps` redundant. Must **only** be host recipes.
 
 Example:
 
@@ -689,8 +689,7 @@ Example:
 # host-recipes/automake/recipe
 
 # ...
-hostdeps="autoconf"
-hostrundeps="autoconf" # automake invokes autoconf at runtime as well as build time
+hostrundeps="autoconf" # automake invokes autoconf at runtime, so consumers of automake also need autoconf
 # ...
 ```
 
