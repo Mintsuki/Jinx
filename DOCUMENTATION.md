@@ -796,8 +796,10 @@ clean_workdirs=no
 
 Recipes may also provide `source_deps`, `source_imagedeps`, `source_hostdeps`, and `source_allow_network` properties. These have effect in two situations:
 
-1. **Within the recipe itself**, they apply only to the source-preparation stages ([`early_prepare()`](<#early_prepare>) and [`prepare()`](<#prepare>)).
-2. **When this recipe is referenced by another recipe via [`from_source`](<#from_source>)**, they replace the consuming recipe's corresponding properties (`deps`, `imagedeps`, `hostdeps`, `allow_network`) for the duration of the source-preparation stages.
+1. **Within the recipe itself**, they fully replace `deps`/`imagedeps`/`hostdeps`/`allow_network` during the source-preparation stages ([`early_prepare()`](<#early_prepare>) and [`prepare()`](<#prepare>)).
+2. **When this recipe is referenced by another recipe via [`from_source`](<#from_source>)**, they fully replace the consuming recipe's corresponding properties (`deps`, `imagedeps`, `hostdeps`, `allow_network`) for the duration of the source-preparation stages.
+
+In both cases, the replacement is unconditional: an unset `source_*` means *empty* during source prep, not "inherit from the regular property". If you set any `source_*`, set every `source_*` you need.
 
 This split is essential when source preparation needs different tools/network access than the actual build (for example, fetching submodules requires network and `git`, but the build itself does not).
 
