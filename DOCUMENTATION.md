@@ -73,6 +73,7 @@ Ensure the following prerequisites have been acquired:
 - `tar`.
 - `wget`.
 - `zstd`.
+- `sha256sum` (or `sha256`) from a `coreutils` package.
 - `free` from a `procps` package.
 - `unshare` from a `util-linux` package.
 
