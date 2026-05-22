@@ -330,10 +330,10 @@ A *bare minimum* `Jinxfile` is as follows:
 ```sh
 #! /bin/sh
 
-# Minimum Jinxfile for Jinx 0.8.x.
+# Minimum Jinxfile for Jinx 0.10.x.
 
 # *Required.* Ensures the project's expected major version matches the running jinx.
-JINX_MAJOR_VER=0.8
+JINX_MAJOR_VER=0.10
 
 # *Required.* Pins the Debian snapshot used for the container's base image.
 # See https://snapshot.debian.org/ for available snapshot identifiers.
@@ -381,7 +381,7 @@ Defined within the recipe, there are a number of properties that determine how J
 
 #### `version`
 
-- **Required**, but not for host recipes.
+- **Required.**
 
 Specifies the version of this recipe. This **should** be set to the version number of the source this package is for (e.g. `version=2.69` for `autoconf-2.69`). Jinx uses the `version` property internally to determine whether to rebuild a package after a version bump (this is why bumping `version` (or `revision`) automatically invalidates a previous build).
 
@@ -980,7 +980,7 @@ Steps 1 and 3 happen *before* the [`prepare()`](<#prepare>) stage but *after* [`
 
 >[!tip]
 >The intended workflow is:
->1. Run `jinx update <recipe>` once to pull and prepare sources.
+>1. Run `jinx build <recipe>` once to pull and prepare sources.
 >2. Edit `sources/<recipe>-workdir/` directly to iterate on changes.
 >3. Run `jinx regen <recipe>` to fold those edits into `<dir>/<recipe>/patches/jinx-working-patch.patch`.
 >4. Run `jinx rebuild <recipe>` to verify.
