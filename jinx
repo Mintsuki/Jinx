@@ -1962,6 +1962,38 @@ do_run_in() {
     . "${cmd_file}"
 }
 
+do_run_in_host() {
+    local pkg="$1"
+    local cmd_file="$2"
+
+    eval "$(include_recipe "${base_dir}"/host-recipes/${pkg})"
+
+    mkdir -p "${build_dir}"/host-builds/${name}
+
+    if [[ -n ${from_source} || -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ]]; then
+        if [[ -n ${from_source} ]]; then
+            local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+            local source_dir="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
+        else
+            local from_source=${name}
+        fi
+
+        if [[ -z ${source_dir} ]]; then
+            local source_dir="${base_dir}"/${_sources_root}/${from_source}
+        else
+            local source_dir="${base_dir}"/"${source_dir}"
+        fi
+    fi
+
+    local prefix="/usr/local"
+    local sysroot="/sysroot"
+
+    cd "${build_dir}"/host-builds/${name}
+
+    set --
+    . "${cmd_file}"
+}
+
 cmd_run_in() {
     if [[ -z ${1-} ]]; then
         die "$0: run-in requires a recipe name"
@@ -1972,18 +2004,28 @@ cmd_run_in() {
         die "$0: run-in requires a command to run"
     fi
 
+    local recipes_dir=recipes
+    local internal_cmd=internal-run-in
+    local builds_dir=builds
+    if [[ ${recipe_glob} == host:* ]]; then
+        local recipes_dir=host-recipes
+        local internal_cmd=internal-run-in-host
+        local builds_dir=host-builds
+        local recipe_glob="${recipe_glob#host:}"
+    fi
+
     local run_in_recipe
-    for run_in_recipe in $(cd "${base_dir}/recipes" && echo ${recipe_glob}); do
-        if [[ ! -f "${base_dir}/recipes/${run_in_recipe}/recipe" ]]; then
-            die "$0: recipe '${run_in_recipe}' not found"
+    for run_in_recipe in $(cd "${base_dir}/${recipes_dir}" && echo ${recipe_glob}); do
+        if [[ ! -f "${base_dir}/${recipes_dir}/${run_in_recipe}/recipe" ]]; then
+            die "$0: recipe '${recipes_dir}/${run_in_recipe}' not found"
         fi
 
-        eval "$(include_recipe "${base_dir}"/recipes/${run_in_recipe})"
+        eval "$(include_recipe "${base_dir}"/${recipes_dir}/${run_in_recipe})"
 
         if [[ -n ${from_source} ]]; then
             tracked_subshell 'do_source "${from_source}" "${_from_source_dir}"'
         else
-            tracked_subshell 'do_source "${name}" recipes'
+            tracked_subshell 'do_source "${name}" "${recipes_dir}"'
         fi
 
         make_temp
@@ -2005,14 +2047,19 @@ cmd_run_in() {
         local container_pkgs=
         local sysroot=
         local imgroot=
+        if [[ ${recipes_dir} == host-recipes ]]; then
+            # Host recipes always use the cross-compile flow, regardless of
+            # JINX_NATIVE_MODE (host_arch sysroot at /sysroot, host pkgs at /usr/local).
+            local cross_compile=yes
+        fi
         prepare_container
 
-        mkdir -p "${build_dir}"/builds/${name}
+        mkdir -p "${build_dir}"/${builds_dir}/${name}
 
         local container_sources_ro=
         local container_base_dir_ro=
         local allow_network=yes
-        run_in_container internal-run-in "${run_in_recipe}" "${cmd_file_inner}"
+        run_in_container "${internal_cmd}" "${run_in_recipe}" "${cmd_file_inner}"
 
         destroy_container
     done
@@ -2465,6 +2512,10 @@ case "$1" in
     internal-run-in)
         shift 1
         do_run_in "$@"
+        ;;
+    internal-run-in-host)
+        shift 1
+        do_run_in_host "$@"
         ;;
     build)
         shift 1

@@ -279,7 +279,7 @@ Errors out if `JINX_REPO_URL` is not set in the `Jinxfile`.
 jinx run-in <recipe> <command> [args...]
 ```
 
-Prepares a container as if it were going to build `<recipe>` (sysroot populated with `deps`, host packages from `hostdeps`/`hostrundeps`, Debian packages from `imagedeps`), then runs the given command inside it from the recipe's build directory. Network access is enabled.
+Prepares a container as if it were going to build `<recipe>` (sysroot populated with `deps`, host packages from `hostdeps`/`hostrundeps`, Debian packages from `imagedeps`), then runs the given command inside it from the recipe's build directory. Network access is enabled. Accepts the `host:` prefix (e.g. `jinx run-in host:gcc bash`) to drop into a host recipe's container instead - the recipe is looked up in `host-recipes/` and the command runs from `host-builds/<name>/`.
 
 Useful for interactive debugging of build failures, running utilities against a populated sysroot, or one-off tasks inside the same environment a recipe sees.
 
