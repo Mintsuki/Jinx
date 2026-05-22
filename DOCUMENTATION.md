@@ -716,7 +716,7 @@ imagedeps="build-essential patchelf"
 #### `allow_network`
 
 - **Optional**.
-- `yes`/`no`.
+- `yes`/`no`. Default: `no`.
 
 If `yes`, the build container is given access to the network. Otherwise, the container is run with `--net` and is fully isolated from the network.
 
@@ -737,7 +737,7 @@ allow_network=yes
 #### `cross_compile`
 
 - **Optional**.
-- `yes`/`no`.
+- `yes`/`no`. Default: `no`.
 
 When [`JINX_NATIVE_MODE=yes`](<#environment-variables>) is set, Jinx normally builds non-host recipes by mounting the sysroot directly as the container root. Setting `cross_compile=yes` on a recipe forces Jinx to use the cross-compile flow (separate sysroot mounted at `/sysroot`) regardless of `JINX_NATIVE_MODE`. This is the right choice for recipes that fundamentally need a cross-toolchain, such as `binutils` or `gcc` targeting a non-host architecture.
 
@@ -757,7 +757,7 @@ cross_compile=yes
 #### `bootstrap_pkg`
 
 - **Optional**.
-- `yes`/`no`.
+- `yes`/`no`. Default: `no`.
 
 When `yes`, Jinx will not record this recipe as a runtime dependency of any other package, nor install it into a sysroot via `jinx install`. Use this for packages that exist purely to bootstrap the build environment (e.g. minimal early libc/runtime headers used to build the real toolchain) and that should not appear in a finished image.
 
@@ -775,7 +775,7 @@ bootstrap_pkg=yes
 #### `clean_workdirs`
 
 - **Optional**.
-- `yes`/`no`.
+- `yes`/`no`. Default: `yes` (i.e., follows `JINX_CLEAN_WORKDIRS`; this property is the per-recipe opt-out).
 
 Per-recipe override for the [`JINX_CLEAN_WORKDIRS`](<#environment-variables>) environment variable. Setting `clean_workdirs=no` keeps this recipe's build directory and downloaded sources around even when `JINX_CLEAN_WORKDIRS=yes` is set globally. Handy for recipes you iterate on frequently.
 
