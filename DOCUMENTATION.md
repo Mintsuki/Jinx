@@ -454,7 +454,9 @@ source_dir="test/"
 - **Optional**.
 - Mutually exclusive with [`from_host_source`](<#from_host_source>).
 
-Specifies another recipe in `recipes/` to draw build sources from. The referenced recipe provides the tarball/git URL, checksums, any [`early_prepare()`](<#early_prepare>)/[`prepare()`](<#prepare>) callbacks, and the `source_*` properties that govern the source-preparation environment. Patches likewise belong to the source recipe and are applied automatically - a consumer recipe that sets `from_source` is not permitted to have its own `patches/` directory.
+Specifies another recipe in `recipes/` to draw build sources from. The referenced recipe provides the tarball/git URL, checksums, `version`, any [`early_prepare()`](<#early_prepare>)/[`prepare()`](<#prepare>) callbacks, and the `source_*` properties that govern the source-preparation environment. Patches likewise belong to the source recipe and are applied automatically - a consumer recipe that sets `from_source` is not permitted to have its own `patches/` directory.
+
+The consumer's resulting XBPS filename uses the **source recipe's `version`** combined with the **consumer's own `revision`**: e.g. `recipes/foo` with `from_source="foo-shared"` and `revision=3`, where `foo-shared` declares `version=1.2`, builds as `foo-1.2_3.<arch>.xbps`. Don't declare your own `version` on a consumer recipe - it would be ignored.
 
 This works for both normal recipes (in `recipes/`) and host recipes (in `host-recipes/`): in either case, the lookup goes to `recipes/`.
 
