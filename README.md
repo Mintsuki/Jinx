@@ -12,7 +12,6 @@ An example OS using Jinx is [Gloire](https://codeberg.org/Ironclad/Gloire).
 ### Dependencies
 - Linux distro (other OSes are not supported)
 - `bash` (the script itself is bash)
-- POSIX compatible `/bin/sh` (used inside containers for mount/chroot setup)
 - awk
 - findutils (for `find` and `xargs`)
 - git
