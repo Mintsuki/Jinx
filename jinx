@@ -147,6 +147,7 @@ cmd_init() {
     cat <<EOF >"${builddir}/.jinx-parameters"
 #! /bin/sh
 
+JINX_INIT_MAJOR_VER="${jinx_major_ver}"
 JINX_SOURCE_DIR="${srcdir}"
 JINX_ARCH="$(uname -m)"
 EOF
@@ -232,6 +233,10 @@ if [[ ! -f "${build_dir}/.jinx-parameters" ]]; then
 fi
 
 . "${build_dir}"/.jinx-parameters
+
+if [[ ${JINX_INIT_MAJOR_VER-} != "${jinx_major_ver}" ]]; then
+    die "$0: build directory '${build_dir}' was initialised with Jinx major version '${JINX_INIT_MAJOR_VER-(none)}', incompatible with this Jinx ${jinx_major_ver}. Delete the build directory and run 'jinx init' again to start over."
+fi
 
 if [[ ${in_container} == false ]]; then
     base_dir="$(cd "$JINX_SOURCE_DIR" && pwd -P)"

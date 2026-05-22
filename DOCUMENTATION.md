@@ -196,7 +196,9 @@ cd source
 ./jinx init ../build ARCH=x86_64
 ```
 
-This produces a `.jinx-parameters` file in the build directory containing at minimum `JINX_SOURCE_DIR` and `JINX_ARCH` (which defaults to `$(uname -m)` if not overridden via `ARCH=...`). Any extra arguments become `JINX_<KEY>="<VALUE>"`. In the first form `JINX_SOURCE_DIR` is recorded exactly as passed (a relative path stays relative to the build directory, resolved when Jinx runs); in the second form it is recorded as an absolute path.
+This produces a `.jinx-parameters` file in the build directory containing at minimum `JINX_INIT_MAJOR_VER`, `JINX_SOURCE_DIR`, and `JINX_ARCH` (which defaults to `$(uname -m)` if not overridden via `ARCH=...`). Any extra arguments become `JINX_<KEY>="<VALUE>"`. In the first form `JINX_SOURCE_DIR` is recorded exactly as passed (a relative path stays relative to the build directory, resolved when Jinx runs); in the second form it is recorded as an absolute path.
+
+`JINX_INIT_MAJOR_VER` records the major version of the `jinx` that initialised the directory. Every subsequent `jinx` invocation refuses to operate on the build directory if this value is missing or doesn't match the running `jinx`'s major version. Recovery is to delete the build directory and run `jinx init` again to start over; there is no in-place reinit because previously built artifacts may be incompatible too.
 
 >[!note]
 >To "deinitialise" a build directory, simply remove `.jinx-parameters`. There is no separate `deinit` command.
