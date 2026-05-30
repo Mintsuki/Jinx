@@ -23,8 +23,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-set -e
-set -u
+set -eu
 
 # Optional environment variables - initialise to empty so set -u is satisfied
 # regardless of whether the user/parent shell set them.
