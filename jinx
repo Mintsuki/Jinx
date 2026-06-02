@@ -359,6 +359,10 @@ if [[ -n ${tarball_url} && -n ${git_url} ]]; then
     die "$0: recipe '${name}' sets both tarball_url and git_url (mutually exclusive source methods)"
 fi
 
+if [[ -n ${source_dir} && -n ${tarball_url} ]]; then
+    die "$0: recipe '${name}' sets both source_dir and tarball_url (mutually exclusive source methods)"
+fi
+
 case "${recipe_dir}" in
     */host-recipes/*) local _from_source_dir=host-recipes ;;
     *) local _from_source_dir=recipes ;;
@@ -776,6 +780,11 @@ destroy_container() {
 }
 
 do_git_fetch() {
+    # $1: clone destination (default: the recipe's sources/ slot).
+    # $2: "full" forces a full clone regardless of the shallow property.
+    local _dest="${1:-${base_dir}/${_sources_root}/${name}}"
+    local _force_full="${2:-}"
+
     if [[ -z ${commit} ]]; then
         die "* error: Git commit not specified"
     fi
@@ -784,11 +793,11 @@ do_git_fetch() {
         die "* error: Invalid commit hash"
     fi
 
-    if [[ ${shallow} == no ]]; then
-        git clone "${git_url}" "${base_dir}"/${_sources_root}/${name}
-        git -C "${base_dir}"/${_sources_root}/${name} -c advice.detachedHead=false checkout "${commit}"
+    if [[ ${shallow} == no || ${_force_full} == full ]]; then
+        git clone "${git_url}" "${_dest}"
+        git -C "${_dest}" -c advice.detachedHead=false checkout "${commit}"
     else
-        git clone "${git_url}" -c advice.detachedHead=false --revision="${commit}" --depth=1 "${base_dir}"/${_sources_root}/${name}
+        git clone "${git_url}" -c advice.detachedHead=false --revision="${commit}" --depth=1 "${_dest}"
     fi
 }
 
@@ -910,7 +919,9 @@ EOF
         printf 'local source_dir=%q\n' "${base_dir}/${_sources_root}/${name}"
     else
         local _real_path="${base_dir}/${source_dir}"
-        if [[ ! -d ${_real_path} ]]; then
+        # A managed clone (git_url also set) may not exist yet; it gets cloned on
+        # first fetch. A plain local package's source_dir must already exist.
+        if [[ -z ${git_url} && ! -d ${_real_path} ]]; then
             printf 'die %q\n' "* source_dir of a local package is not a valid path"
             return 1
         fi
@@ -947,7 +958,14 @@ do_fetch() {
 
     local sysroot=/sysroot
 
-    if [[ ${is_local_package} != true && ${is_sourceless_package} != true ]]; then
+    if [[ ${is_local_package} == true ]]; then
+        # Managed clone: a local package with a git_url is cloned into source_dir
+        # once and then used in place. An existing tree is never re-cloned (remove
+        # it to start fresh); plain local and sourceless packages have no git_url.
+        if [[ -n ${git_url} && ! -d ${source_dir} ]]; then
+            do_git_fetch "${source_dir}" full
+        fi
+    else
         if [[ -n ${git_url} ]]; then
             do_git_fetch
         elif [[ -n ${tarball_url} ]]; then
@@ -1239,7 +1257,15 @@ do_source() {
     local container_base_dir_ro=
     prepare_container
 
+    local _need_fetch=no
     if [[ ! -f "${base_dir}/${_sources_root}/$1.version" || $(cat "${base_dir}/${_sources_root}/$1.version") != "${version}" ]]; then
+        local _need_fetch=yes
+    fi
+    # Re-clone a managed clone whose working tree was removed, even if .version matches.
+    if [[ ${is_local_package} == true && -n ${git_url} && ! -d ${source_dir} ]]; then
+        local _need_fetch=yes
+    fi
+    if [[ ${_need_fetch} == yes ]]; then
         tracked_subshell '
             local allow_network=yes
             local container_base_dir_ro=

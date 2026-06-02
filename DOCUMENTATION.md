@@ -421,7 +421,8 @@ revision=1
 #### `source_dir`
 
 - **Optional.**
-- Overrides other source options.
+- Mutually exclusive with [`tarball_url`](<#tarball_url>) (setting both is an error).
+- May be combined with [`git_url`](<#git_url>) to enable *managed-clone mode* (see below).
 
 Tells Jinx to use the source directory specified in the recipe (interpreted relative to the source directory containing `Jinxfile`), marking the recipe as a "local package". This is useful for building code that lives in the same project as the recipes.
 
@@ -453,6 +454,32 @@ source_dir="test/"
 >source_dir="kernel" # Our kernel project is within the `kernel/` directory.
 ># ...
 >```
+
+##### Managed clones (`source_dir` + `git_url`)
+
+If a recipe sets **both** `source_dir` and [`git_url`](<#git_url>), Jinx treats it as a *managed clone*. This is intended for repositories maintained by the same people working on the distribution: Jinx clones the repository **once** into `source_dir`, then leaves it entirely alone and uses it exactly like a normal `source_dir` local package (in place, never patched, never auto-cleaned).
+
+The behavior is:
+
+- On the first build, if `source_dir` does not yet exist, Jinx performs a **full** clone of `git_url` into it and checks out [`commit`](<#commit>) (which remains **required**, as the reproducible starting point). [`shallow`](<#shallow>) has no effect here - managed clones are always full clones so you have history to work with.
+- On every later build, an **existing** `source_dir` is used as-is. Jinx never re-clones it, never checks out `commit` again, never patches it, and never deletes it (neither `clean_sources` nor [`JINX_CLEAN_WORKDIRS`](<#environment-variables>) touch a local package's tree). It is your working tree to develop in - commit, branch, and push with `git` directly.
+- To start over from a fresh clone, delete the `source_dir` directory; the next build re-clones it.
+
+Because it is a local package, a managed clone cannot carry a `patches/` directory's effect (patches are skipped, as with any local package) - manage changes with git instead. This works for both normal recipes and host recipes.
+
+Example:
+
+```sh
+#! /bin/sh
+# recipes/kernel/recipe
+
+version=1.0.0
+revision=1
+source_dir="kernel"                                   # cloned-into / worked-in here
+git_url="https://github.com/example/kernel.git"       # cloned from here, once
+commit="28257019ce04f784337cb9c3125abb4d02cef14d"     # initial checkout point
+# ...
+```
 
 #### `from_source`
 
@@ -575,6 +602,8 @@ tarball_sha512="172acc1bc70350b1f7e46063e98c4a5ce4dd3c245a7e7bd383d8fce4a44ea0d4
 
 URL to a Git repository that will be cloned to be used as the source for this recipe. Requires a [`commit`](<#commit>) property to specify the commit to check out.
 
+If combined with [`source_dir`](<#source_dir>), the recipe becomes a *managed clone* - cloned once into `source_dir` and thereafter used in place as a local package. See [`source_dir`](<#source_dir>). Cannot be combined with [`tarball_url`](<#tarball_url>).
+
 Example:
 
 ```sh
@@ -588,10 +617,10 @@ git_url="https://codeberg.org/osdev/libgcc-binaries.git"
 
 #### `commit`
 
-- **Required** for [`git_url`](<#git_url>).
+- **Required** for [`git_url`](<#git_url>) (including in managed-clone mode).
 - Must be a 40-character lowercase hex string.
 
-Specifies the commit to check out from a Git repository specified by [`git_url`](<#git_url>). Branch names and tags are not accepted; this must be a full commit hash so that builds remain reproducible.
+Specifies the commit to check out from a Git repository specified by [`git_url`](<#git_url>). Branch names and tags are not accepted; this must be a full commit hash so that builds remain reproducible. In [managed-clone mode](<#source_dir>) it is the commit checked out on the initial clone only; afterwards the working tree is yours to move around.
 
 Example:
 
@@ -609,7 +638,7 @@ commit="28257019ce04f784337cb9c3125abb4d02cef14d"
 - **Optional**.
 - `yes`/`no`. Default: `yes`.
 
-Controls whether [`git_url`](<#git_url>) clones are shallow. By default, Jinx performs a shallow `--revision=<commit> --depth=1` clone of the requested commit. Set `shallow=no` to perform a full clone instead, which is useful when the recipe's `prepare()` or `build()` needs git history (e.g. `git describe` for version stamping).
+Controls whether [`git_url`](<#git_url>) clones are shallow. By default, Jinx performs a shallow `--revision=<commit> --depth=1` clone of the requested commit. Set `shallow=no` to perform a full clone instead, which is useful when the recipe's `prepare()` or `build()` needs git history (e.g. `git describe` for version stamping). Has no effect in [managed-clone mode](<#source_dir>), which always performs a full clone.
 
 Example:
 
