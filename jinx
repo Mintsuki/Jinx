@@ -1916,7 +1916,9 @@ cmd_download_for() {
             || die "$0: failed to download ${pkg_file} from ${repo_url}"
 
         # Verify SHA256 against repodata
-        local pkg_name="${pkg_file%%-[0-9]*}"
+        local pkg_name="${pkg_file%.${arch}.xbps}"
+        local pkg_name="${pkg_name%-*}"
+        local pkg_name="$(printf '%s' "${pkg_name}" | sed 's/[.[\*^$\\]/\\&/g')"
         local expected_sha256="$(sed -n "/<key>${pkg_name}<\\/key>/,/<key>filename-sha256<\\/key>/{
             /<key>filename-sha256<\\/key>/{n;s/.*<string>\\(.*\\)<\\/string>.*/\\1/p;}
         }" "${index_plist}")"
