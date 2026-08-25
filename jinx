@@ -808,7 +808,7 @@ do_tarball_fetch() {
         make_temp
         local download_path="${tmp}"
 
-        curl -L -o "${download_path}" "${tarball_url}"
+        curl -f -L -o "${download_path}" "${tarball_url}"
         mv "${download_path}" "${tarball_path}"
     fi
 
