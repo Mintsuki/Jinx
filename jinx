@@ -43,7 +43,7 @@ export LC_COLLATE=C
 umask 0022
 
 jinx_major_ver="0.10"
-jinx_minor_ver="7"
+jinx_minor_ver="8"
 
 jinx_version="${jinx_major_ver}.${jinx_minor_ver}"
 
@@ -268,6 +268,21 @@ if [[ ${in_container} == false ]]; then
     export LD_LIBRARY_PATH="${JINX_CACHE_DIR}/xbps/lib${LD_LIBRARY_PATH}"
 
     mkdir -p "${base_dir}/sources" "${base_dir}/host-sources" "${build_dir}/host-builds" "${build_dir}/host-pkgs" "${build_dir}/builds" "${build_dir}/pkgs"
+
+    case "$1" in
+        dry-run|version|--version|help|--help|init)
+            ;;
+        *)
+            exec 9>"${JINX_CACHE_DIR}/jinx.lock"
+            if ! flock -n 9; then
+                die "$0: another jinx is already running in this build directory.
+  lock: ${JINX_CACHE_DIR}/jinx.lock
+  jinx shares sources/, builds/ and pkgs/ between runs and is not
+  concurrency-safe -- a second run will delete the first one's build tree.
+  Wait for the running command to finish."
+            fi
+            ;;
+    esac
 fi
 
 apt_cache="$JINX_CACHE_DIR/apt-cache"
@@ -319,6 +334,8 @@ local revision=
 local from_source=
 local from_host_source=
 local deps=
+local binpkgdeps=
+local conf_files=
 local builddeps=
 local hostdeps=
 local hostrundeps=
@@ -338,6 +355,12 @@ local tarball_url=
 local tarball_sha256=
 local tarball_sha512=
 local tarball_blake2b=
+local zip_url=
+local zip_sha256=
+local zip_sha512=
+local zip_blake2b=
+local _archive_format=tar
+local _checksum_prefix=tarball
 
 early_prepare() { :; }
 prepare() { :; }
@@ -361,6 +384,24 @@ fi
 
 if [[ -n ${source_dir} && -n ${tarball_url} ]]; then
     die "$0: recipe '${name}' sets both source_dir and tarball_url (mutually exclusive source methods)"
+fi
+
+if [[ -n ${zip_url} ]]; then
+    if [[ -n ${tarball_url} ]]; then
+        die "$0: recipe '${name}' sets both tarball_url and zip_url (mutually exclusive source methods)"
+    fi
+    if [[ -n ${git_url} ]]; then
+        die "$0: recipe '${name}' sets both zip_url and git_url (mutually exclusive source methods)"
+    fi
+    if [[ -n ${source_dir} ]]; then
+        die "$0: recipe '${name}' sets both source_dir and zip_url (mutually exclusive source methods)"
+    fi
+    local tarball_url=${zip_url}
+    local tarball_sha256=${zip_sha256}
+    local tarball_sha512=${zip_sha512}
+    local tarball_blake2b=${zip_blake2b}
+    local _archive_format=zip
+    local _checksum_prefix=zip
 fi
 
 case "${recipe_dir}" in
@@ -612,6 +653,17 @@ prepare_container() {
     get_hostdeps_file
     get_builddeps_file
 
+    local _bpd_of _bpd
+    for _bpd_of in "${!_deps_collected[@]}"; do
+        for _bpd in $(eval "$(include_recipe "${base_dir}/recipes/${_bpd_of}")" && echo "${binpkgdeps}"); do
+            [[ -n ${_deps_collected[$_bpd]+x} ]] && continue
+            [[ ${_bpd} == "${name}" ]] && continue
+            tracked_subshell '
+                do_build_if_needed "${_bpd}"
+            '
+        done
+    done
+
     make_temp -d
     container_pkgs="${tmp}"
     make_temp -d
@@ -843,7 +895,7 @@ do_tarball_fetch() {
         local actual_sha256="${actual_sha256%% *}"
         if [[ ${actual_sha256} != "${tarball_sha256}" ]]; then
             if [[ ${tarball_sha256} == "?" ]]; then
-                fill_recipe_checksum tarball_sha256 "${actual_sha256}"
+                fill_recipe_checksum "${_checksum_prefix}_sha256" "${actual_sha256}"
             else
                 die "* error: Failed to verify SHA256 for ${name}.
   Expected '${tarball_sha256}';
@@ -857,7 +909,7 @@ do_tarball_fetch() {
         local actual_sha512="${actual_sha512%% *}"
         if [[ ${actual_sha512} != "${tarball_sha512}" ]]; then
             if [[ ${tarball_sha512} == "?" ]]; then
-                fill_recipe_checksum tarball_sha512 "${actual_sha512}"
+                fill_recipe_checksum "${_checksum_prefix}_sha512" "${actual_sha512}"
             else
                 die "* error: Failed to verify SHA512 for ${name}.
   Expected '${tarball_sha512}';
@@ -871,7 +923,7 @@ do_tarball_fetch() {
         local actual_blake2b="${actual_blake2b%% *}"
         if [[ ${actual_blake2b} != "${tarball_blake2b}" ]]; then
             if [[ ${tarball_blake2b} == "?" ]]; then
-                fill_recipe_checksum tarball_blake2b "${actual_blake2b}"
+                fill_recipe_checksum "${_checksum_prefix}_blake2b" "${actual_blake2b}"
             else
                 die "* error: Failed to verify BLAKE2B for ${name}.
   Expected '${tarball_blake2b}';
@@ -888,7 +940,11 @@ do_tarball_fetch() {
     make_temp -d
     local extract_dir="${tmp}"
 
-    ( cd "${extract_dir}" && tar -xf "${tarball_path}" )
+    if [[ ${_archive_format} == zip ]]; then
+        ( cd "${extract_dir}" && unzip -q "${tarball_path}" )
+    else
+        ( cd "${extract_dir}" && tar -xf "${tarball_path}" )
+    fi
 
     mv "${extract_dir}"/* "${base_dir}"/${_sources_root}/${name} >/dev/null 2>&1 || (
         mkdir -p "${base_dir}"/${_sources_root}/${name}
@@ -1356,9 +1412,13 @@ do_regen() {
             mv "${vc_dir_workdir}" $1-workdir/.git
         fi
 
+        local _regen_patches_dir="${base_dir}/${_from_source_dir}/$1/patches"
         if [[ -s "${patch_file}" ]]; then
-            mkdir -p "${base_dir}/${_from_source_dir}/$1/patches"
-            mv "${patch_file}" "${base_dir}/${_from_source_dir}/$1/patches/jinx-working-patch.patch"
+            mkdir -p "${_regen_patches_dir}"
+            mv "${patch_file}" "${_regen_patches_dir}/jinx-working-patch.patch"
+        else
+            rm -f "${_regen_patches_dir}/jinx-working-patch.patch"
+            rmdir "${_regen_patches_dir}" 2>/dev/null || true
         fi
 
         cd "${base_dir}"
@@ -1378,6 +1438,8 @@ do_regen() {
     prepare_container
     run_in_container internal-prepare "$1" "$2"
     destroy_container
+
+    touch "${base_dir}"/${_sources_root}/$1.prepared
 }
 
 do_host_pkg() {
@@ -1439,6 +1501,7 @@ do_host_pkg() {
         -s ${name} \
         -n ${name}-${version}_${revision} \
         -D "${xbps_deps}" \
+        -F "${conf_files}" \
         "${dest_dir}"
 
     force_remove "${dest_dir}"
@@ -1521,6 +1584,26 @@ do_pkg() {
         local xbps_deps="${xbps_deps} ${dep}>=0.0"
     done
 
+    local binpkgdep
+    for binpkgdep in ${binpkgdeps}; do
+        [[ -f "${base_dir}/recipes/${binpkgdep}/recipe" ]] \
+            || die "$0: binpkgdeps entry '${binpkgdep}' of recipe '${name}' is not a recipe"
+
+        local _dupe
+        for _dupe in ${deps} ${builddeps}; do
+            if [[ ${binpkgdep} == "${_dupe}" ]]; then
+                die "$0: recipe '${name}' lists '${binpkgdep}' in both binpkgdeps and deps/builddeps; binpkgdeps is only for a runtime dependency whose build-order edge would otherwise create a cycle"
+            fi
+        done
+
+        local bootstrap_pkg=$(eval "$(include_recipe "${base_dir}"/recipes/${binpkgdep})" && echo "${bootstrap_pkg}")
+        if [[ ${bootstrap_pkg} == yes ]]; then
+            continue
+        fi
+
+        local xbps_deps="${xbps_deps} ${binpkgdep}>=0.0"
+    done
+
     local dest_dir="${build_dir}/pkgs/${name}"
 
     cd "${build_dir}"/pkgs
@@ -1531,6 +1614,7 @@ do_pkg() {
         -s ${name} \
         -n ${name}-${version}_${revision} \
         -D "${xbps_deps}" \
+        -F "${conf_files}" \
         "${dest_dir}"
 
     force_remove "${dest_dir}"
@@ -1743,7 +1827,7 @@ cmd_dry_run() {
     # Build a lookup table: package -> deps
     local -A pkg_deps
     for pkg in ${all_packages}; do
-        pkg_deps[$pkg]=$(eval "$(include_recipe "${base_dir}/recipes/${pkg}")" && echo "${deps} ${builddeps}")
+        pkg_deps[$pkg]=$(eval "$(include_recipe "${base_dir}/recipes/${pkg}")" && echo "${deps} ${builddeps} ${source_deps}")
     done
 
     # Recursively collect all transitive deps
@@ -1755,7 +1839,7 @@ cmd_dry_run() {
         collected[$pkg]=1
 
         # Lazily fill pkg_deps for transitively-discovered packages
-        [[ -n ${pkg_deps[$pkg]+x} ]] || pkg_deps[$pkg]=$(eval "$(include_recipe "${base_dir}/recipes/${pkg}")" && echo "${deps} ${builddeps}")
+        [[ -n ${pkg_deps[$pkg]+x} ]] || pkg_deps[$pkg]=$(eval "$(include_recipe "${base_dir}/recipes/${pkg}")" && echo "${deps} ${builddeps} ${source_deps}")
 
         local dep
         for dep in ${pkg_deps[$pkg]}; do
@@ -1783,7 +1867,7 @@ cmd_dry_run() {
     # Collect host deps for all unbuilt packages
     local -A pkg_hostdeps
     for pkg in ${all_unbuilt}; do
-        local hostdeps="$(eval "$(include_recipe "${base_dir}/recipes/${pkg}")" && echo "${hostdeps} ${hostrundeps}")"
+        local hostdeps="$(eval "$(include_recipe "${base_dir}/recipes/${pkg}")" && echo "${hostdeps} ${hostrundeps} ${source_hostdeps}")"
         if [[ -n ${hostdeps} ]]; then
             pkg_hostdeps[$pkg]=$hostdeps
         fi
@@ -1813,14 +1897,16 @@ cmd_dry_run() {
     for dep in ${topo_sort_result}; do
         # Emit host deps for this package first
         if [[ -n ${pkg_hostdeps[$dep]+x} ]]; then
-            local hostdep
+            local hostdep _ho
             for hostdep in ${pkg_hostdeps[$dep]}; do
-                if [[ ${emitted_hostdeps} != *" ${hostdep} "* ]]; then
-                    if [[ ! -f "${build_dir}/host-pkgs/$(host_pkg_filename "${hostdep}")" ]]; then
-                        local pending_list="${pending_list} host:${hostdep}"
+                for _ho in $(tracked_subshell 'get_hostdeps_builddeps "${hostdep}"'); do
+                    if [[ ${emitted_hostdeps} != *" ${_ho} "* ]]; then
+                        if [[ ! -f "${build_dir}/host-pkgs/$(host_pkg_filename "${_ho}")" ]]; then
+                            local pending_list="${pending_list} host:${_ho}"
+                        fi
+                        local emitted_hostdeps="${emitted_hostdeps}${_ho} "
                     fi
-                    local emitted_hostdeps="${emitted_hostdeps}${hostdep} "
-                fi
+                done
             done
         fi
         # Then emit the package itself
@@ -1854,9 +1940,9 @@ cmd_download_for() {
     local -A pkg_deps
     for pkg in $(cd "${base_dir}/${recipes_dir}" && echo *); do
         if [[ ${recipes_dir} == recipes ]]; then
-            pkg_deps[$pkg]=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/${pkg}")" && echo "${deps} ${builddeps}")
+            pkg_deps[$pkg]=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/${pkg}")" && echo "${deps} ${builddeps} ${source_deps} ${binpkgdeps}")
         else
-            pkg_deps[$pkg]=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/${pkg}")" && echo "${hostdeps} ${hostrundeps}")
+            pkg_deps[$pkg]=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/${pkg}")" && echo "${hostdeps} ${hostrundeps} ${source_hostdeps}")
         fi
     done
 
