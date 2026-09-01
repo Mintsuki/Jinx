@@ -24,7 +24,7 @@ An example OS using Jinx is [Gloire](https://codeberg.org/Ironclad/Gloire).
 - zstd
 - coreutils or equivalent (for `sha256sum`/`sha256`)
 - procps or equivalent (for `free`)
-- util-linux or equivalent (for `unshare`)
+- util-linux or equivalent (for `unshare` and `flock`)
 
 ### Documentation
 

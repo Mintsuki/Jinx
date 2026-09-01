@@ -35,11 +35,16 @@ Links to different points in this documentation:
 		- [`tarball_blake2b`](<#tarball_blake2b>)
 		- [`tarball_sha256`](<#tarball_sha256>)
 		- [`tarball_sha512`](<#tarball_sha512>)
+		- [`zip_url`](<#zip_url>)
+		- [`zip_blake2b`](<#zip_blake2b>)
+		- [`zip_sha256`](<#zip_sha256>)
+		- [`zip_sha512`](<#zip_sha512>)
 		- [`git_url`](<#git_url>)
 		- [`commit`](<#commit>)
 		- [`shallow`](<#shallow>)
 		- [`deps`](<#deps>)
 		- [`builddeps`](<#builddeps>)
+		- [`binpkgdeps`](<#binpkgdeps>)
 		- [`hostdeps`](<#hostdeps>)
 		- [`hostrundeps`](<#hostrundeps>)
 		- [`imagedeps`](<#imagedeps>)
@@ -47,6 +52,7 @@ Links to different points in this documentation:
 		- [`cross_compile`](<#cross_compile>)
 		- [`bootstrap_pkg`](<#bootstrap_pkg>)
 		- [`clean_workdirs`](<#clean_workdirs>)
+		- [`conf_files`](<#conf_files>)
 		- [`source_*`](<#source_>)
 	- [Functions](<#functions>)
 		- [`early_prepare()`](<#early_prepare>)
@@ -74,7 +80,7 @@ Ensure the following prerequisites have been acquired:
 - `zstd`.
 - `sha256sum` (or `sha256`) from a `coreutils` package.
 - `free` from a `procps` package.
-- `unshare` from a `util-linux` package.
+- `unshare` and `flock` from a `util-linux` package.
 
 >[!warning]
 >It is ***imperative*** that jinx be run under Linux, as the container environment relies on non-POSIX Linux features (user namespaces, mount namespaces, `chroot`). You ***will*** run into issues on other systems.
@@ -126,18 +132,34 @@ Additionally, the **source directory** will gain a few extra entries during use:
 
 ```
 example-source/
-|-- .jinx-cache/    # XBPS, debootstrap, container image cache
+|-- .jinx-cache/    # XBPS, debootstrap, container image cache, build lock
 |-- sources/        # downloaded/cloned sources for recipes/
 \-- host-sources/   # downloaded/cloned sources for host-recipes/
 ```
 
 Normal recipes and host recipes get fully separate source trees, mirroring the `recipes/` vs `host-recipes/` split. A recipe named `foo` in `recipes/` extracts to `sources/foo/`, while a recipe with the same name in `host-recipes/` extracts to `host-sources/foo/` - so the two can have independent inline sources without colliding.
 
+Within `sources/` (and identically within `host-sources/`), every source recipe owns a small family of entries:
+
+```
+sources/
+|-- <name>/               # the tree builds are run against
+|-- <name>-clean/         # snapshot taken after the static patches, before the working patch
+|-- <name>-workdir/       # editable copy; `jinx regen` diffs it against <name>-clean/
+|-- <name>.version        # version the tree was fetched for
+|-- <name>.revision       # revision a normal recipe last prepared the tree for
+|-- <name>.host-revision  # revision a host recipe last prepared the tree for
+|-- <name>.patched        # stamp: patches have been applied
+\-- <name>.prepared       # stamp: prepare() has been run
+```
+
+The stamp files are what make source preparation happen exactly once: a mismatching `<name>.version` (or a bumped `revision`) wipes the whole family and forces a fresh fetch, patch and prepare. A local package (one using [`source_dir`](<#source_dir>)) keeps its tree wherever the recipe points, so only the stamp files show up here - Jinx never patches, copies or deletes the tree itself.
+
 >[!note]
 >In-tree builds are explicitly forbidden. Running `jinx init` from a directory that already contains a `Jinxfile` will fail.
 
 >[!tip]
->Multiple build directories may share the same source directory. This is convenient for keeping side-by-side builds for different architectures, configurations, or experiments.
+>Multiple build directories may share the same source directory. This is convenient for keeping side-by-side builds for different architectures, configurations, or experiments. They cannot be *driven* side by side, though: they share `sources/` and the cache, and Jinx serialises them with a lock (see [Commands](<#commands>)).
 
 ## Commands
 
@@ -168,6 +190,9 @@ example: jinx update '*'
 
 >[!tip]
 >For commands that operate on recipes ([`build`](<#build>), [`rebuild`](<#rebuild>), [`revbump`](<#revbump>), [`regenerate`](<#regenerate>), [`update`](<#update>), [`dry-run`](<#dry-run>), [`download`](<#download>), [`run-in`](<#run-in>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`. The `install` command, by contrast, only operates on normal recipes.
+
+>[!note]
+>Every command except `help`, `version`, `init` and [`dry-run`](<#dry-run>) holds an exclusive lock on `<cache-dir>/jinx.lock` for the whole run, and refuses to start while another Jinx holds it. Jinx shares `sources/`, `builds/` and `pkgs/` between runs and is not concurrency-safe - a second run would delete the first one's build tree. Since the cache directory defaults to `<source-dir>/.jinx-cache`, this also serialises build directories that share a source directory, which is exactly what their shared `sources/` requires.
 
 #### `init`
 
@@ -237,7 +262,11 @@ This automates step 2 of the [reverse-dependency workflow](<#reverse-dependencie
 
 - Alias: `regen`
 
-Regenerates `<dir>/<name>/patches/jinx-working-patch.patch` from any in-place modifications made to `sources/<name>-workdir/`, then re-runs the [`prepare()`](<#prepare>) step. Use this when iterating on patches: edit the working copy, run `regen`, then `rebuild` the recipe. Accepts the `host:` prefix (e.g. `jinx regen host:gcc`) to regen a host recipe.
+Regenerates `<dir>/<name>/patches/jinx-working-patch.patch` from any in-place modifications made to `sources/<name>-workdir/` (`host-sources/<name>-workdir/` for a host recipe), then re-runs the [`prepare()`](<#prepare>) step. Use this when iterating on patches: edit the working copy, run `regen`, then `rebuild` the recipe. Accepts the `host:` prefix (e.g. `jinx regen host:gcc`) to regen a host recipe.
+
+The patch is the diff between `<name>-clean/` and `<name>-workdir/`, and the workdir then replaces the tree that builds run against. If the two no longer differ, `regen` **deletes** an existing `jinx-working-patch.patch` instead (and removes `patches/` if that leaves it empty) - this is how a working patch is dropped once its changes have landed upstream or graduated into a static patch.
+
+The recipe's sources must have been fetched and patched by an earlier build; `regen` on a recipe that was never built fails with `cannot regenerate non-built package`.
 
 Only valid on source recipes (i.e. recipes that declare their own sources); attempting to `regen` a recipe that uses [`from_source`](<#from_source>) or [`from_host_source`](<#from_host_source>) is an error - the error message points at the right command for regenerating the actual source recipe.
 
@@ -259,7 +288,11 @@ The `-f` flag **forces** the installation, removing any pre-existing version of 
 
 #### `dry-run`
 
-Prints, on a single line space-separated, the topological order of packages that would be built to satisfy the given target(s) (or `'*'` if no target is given). Already-built packages are omitted. Host packages appear with a `host:` prefix immediately before the first regular package that depends on them. `host:` targets are accepted as well: each (with its transitive host dependencies) is previewed in host topological order, also `host:`-prefixed.
+Prints, on a single line space-separated, the topological order of packages that would be built to satisfy the given target(s) (or `'*'` - every normal recipe - if no target is given). Already-built packages are omitted.
+
+Normal and host packages share a **single** topological order and interleave wherever the dependencies demand it; host ones are printed with a `host:` prefix, and `host:` targets are accepted as roots. The graph spans both namespaces exactly like the builds do: `hostdeps`, `hostrundeps` and `source_hostdeps` are edges into `host-recipes/`, while `deps`, `builddeps` and `source_deps` are edges into `recipes/`, and either kind of recipe may have either kind of edge. [`binpkgdeps`](<#binpkgdeps>) are deliberately *not* edges here - not creating a build-order edge is the entire point of that property.
+
+`dry-run` builds nothing and writes nothing, and it is the one recipe command that does not take the build lock, so it can be run while another Jinx is busy in the same directory.
 
 This is useful for scripting (for example, building one package at a time in CI to keep memory low) and for quickly inspecting what an `update` will do without actually building anything.
 
@@ -269,9 +302,9 @@ This is useful for scripting (for example, building one package at a time in CI 
 jinx download <package(s)>
 ```
 
-Fetches pre-built XBPS files for the specified package(s) and their transitive dependencies from the URL set in `JINX_REPO_URL` (Jinxfile variable). Each downloaded file's SHA256 is verified against the repository's `index.plist`, and the local repo index is updated.
+Fetches pre-built XBPS files for the specified package(s) and their transitive dependencies from the URL set in `JINX_REPO_URL` (Jinxfile variable). Only files that are missing from `pkgs/` are fetched; when everything the targets need is already there, Jinx says so and does nothing. Each downloaded file's SHA256 is verified against the repository's `index.plist`, and the local repo index is updated.
 
-Accepts the `host:` prefix to fetch host packages instead: `host:` targets are resolved against `host-recipes/`, fetched from `JINX_HOST_REPO_URL` (a separate Jinxfile variable), and dropped into `host-pkgs/` (and walked through `hostdeps`/`hostrundeps` rather than `deps`/`builddeps`). Normal and `host:` targets can be mixed in a single invocation; each group uses its own repo URL and its own arch repodata. Note that the transitive walk stays within one namespace: `jinx download foo` does **not** automatically also fetch foo's `hostdeps` - run `jinx download 'host:*'` (or list specific host packages) to populate `host-pkgs/`.
+Accepts the `host:` prefix to fetch host packages instead: `host:` targets are resolved against `host-recipes/`, fetched from `JINX_HOST_REPO_URL` (a separate Jinxfile variable), and dropped into `host-pkgs/` (and walked through `hostdeps`/`hostrundeps`/`source_hostdeps` rather than `deps`/`builddeps`/`source_deps`/`binpkgdeps`). Normal and `host:` targets can be mixed in a single invocation; each group uses its own repo URL and its own arch repodata. Note that the transitive walk stays within one namespace: `jinx download foo` does **not** automatically also fetch foo's `hostdeps` - run `jinx download 'host:*'` (or list specific host packages) to populate `host-pkgs/`.
 
 The two URLs are kept separate so that target and host repos can coexist even in native builds (where `JINX_ARCH == $(uname -m)` and a single flat directory couldn't disambiguate `${arch}-repodata` files for the two namespaces). A typical layout is to publish `<repo-root>/target/` and `<repo-root>/host/` and point each variable at the appropriate subdirectory.
 
@@ -283,7 +316,9 @@ Errors out if `JINX_REPO_URL` is not set when normal packages are requested, or 
 jinx run-in <recipe> <command> [args...]
 ```
 
-Prepares a container as if it were going to build `<recipe>` (sysroot populated with `deps`, host packages from `hostdeps`/`hostrundeps`, Debian packages from `imagedeps`), then runs the given command inside it from the recipe's build directory. Network access is enabled. Accepts the `host:` prefix (e.g. `jinx run-in host:gcc bash`) to drop into a host recipe's container instead - the recipe is looked up in `host-recipes/` and the command runs from `host-builds/<name>/`.
+Prepares a container as if it were going to build `<recipe>` (sysroot populated with `deps`, host packages from `hostdeps`/`hostrundeps`, Debian packages from `imagedeps`), then runs the given command inside it from the recipe's build directory. Network access is enabled. Accepts the `host:` prefix (e.g. `jinx run-in host:gcc bash`) to drop into a host recipe's container instead - the recipe is looked up in `host-recipes/` and the command runs from `host-builds/<name>/`, always through the cross-compile flow.
+
+The recipe's sources are fetched, patched and prepared first if that has not happened yet, and the build directory is created if it is missing, so `run-in` works on a recipe that has never been built. The recipe argument is glob-expanded like everywhere else, in which case the command is run once per match.
 
 Useful for interactive debugging of build failures, running utilities against a populated sysroot, or one-off tasks inside the same environment a recipe sees.
 
@@ -360,6 +395,11 @@ The full set of Jinx-recognised variables in a `Jinxfile`:
 
 `JINX_ARCH` is **not** read from the `Jinxfile`; it is set in `.jinx-parameters` (defaulting to `$(uname -m)`, overridable via `jinx init <src> ARCH=...`).
 
+The base container image is a `minbase` Debian `sid` snapshot with `locales` and the following packages installed: `bash`, `bzip2`, `ca-certificates`, `curl`, `diffutils`, `findutils`, `gawk`, `git`, `grep`, `gzip`, `lzip`, `netbase`, `patch`, `procps`, `sed`, `tar`, `unzip`, `xz-utils`, `zstd`. Anything else a recipe needs at build time belongs in its [`imagedeps`](<#imagedeps>); `JINX_BASE_PACKAGES` is for tools that every recipe should have, including during source preparation, where per-recipe `imagedeps` do not apply and [`source_imagedeps`](<#source_>) is the only other way in.
+
+>[!note]
+>`JINX_CMAKE_PLATFORM` copies the file into `usr/share/cmake-*/Modules/Platform/` of the base image, a directory that only exists once CMake is installed there - list `cmake` in `JINX_BASE_PACKAGES` alongside it.
+
 >[!note]
 >Helper functions referenced by recipes will be run inside the container, and will *not* run on the host. The `Jinxfile` itself, however, is sourced both on the host and inside the container on every Jinx invocation, so any *top-level* code (outside of function bodies) runs in both contexts - keep top-level code portable and put host- or container-specific work inside helper functions.
 
@@ -368,10 +408,13 @@ The full set of Jinx-recognised variables in a `Jinxfile`:
 Several environment variables can be set when invoking `jinx` to alter its behaviour:
 
 - `JINX_PARALLELISM`: Override the `parallelism` value passed to recipes. By default, Jinx auto-tunes this from the number of online CPUs and available RAM (roughly one job per ~2 GiB of RAM, capped by `nproc`).
-- `JINX_CACHE_DIR`: Override the cache location. Defaults to `<source-dir>/.jinx-cache`.
+- `JINX_CACHE_DIR`: Override the cache location. Defaults to `<source-dir>/.jinx-cache`. The build lock lives here, so runs sharing a cache directory are serialised against each other.
 - `JINX_CLEAN_WORKDIRS`: When set to `yes`, Jinx removes the recipe's build directory and downloaded sources after a successful package build, on a per-recipe basis (a recipe may opt out via [`clean_workdirs=no`](<#clean_workdirs>)).
-- `JINX_NATIVE_MODE`: When set to `yes`, Jinx mounts the in-progress sysroot directly as the container root for non-cross recipes (any recipe without [`cross_compile=yes`](<#cross_compile>)). This is intended for native (host arch == target arch) builds.
+- `JINX_NATIVE_MODE`: When set to `yes`, Jinx mounts the in-progress sysroot directly as the container root for every recipe that leaves [`cross_compile`](<#cross_compile>) unset. This is intended for native (host arch == target arch) builds. Such a recipe gets no Debian image (so its [`imagedeps`](<#imagedeps>) do not apply), no host packages under `/usr/local` (its [`hostdeps`](<#hostdeps>) are still built, just not installed), and no `/sysroot` - everything it uses comes from the sysroot that *is* its container root. Host recipes and the source-preparation stages always take the regular cross flow regardless of this variable.
 - `JINX_NATIVE_LANG`: When `JINX_NATIVE_MODE=yes` and the container is the sysroot, controls the value of `LANG` inside the container. Defaults to `C`.
+
+>[!note]
+>`TERM` and `COLORTERM` are forwarded into the build container when they are set, so build tools keep their coloured output.
 
 ## Recipes
 
@@ -527,7 +570,7 @@ from_host_source="gcc-host" # Refers to host-recipes/gcc-host.
 
 - **Optional**.
 
-Specifies a URL to download a tarball from, to use as the source for this recipe. The tarball is verified against a checksum before extraction.
+Specifies a URL to download a tarball from, to use as the source for this recipe. The archive is downloaded into `sources/`, verified against a checksum, unpacked with `tar` and then deleted. Mutually exclusive with [`git_url`](<#git_url>), [`source_dir`](<#source_dir>) and [`zip_url`](<#zip_url>) - for `.zip` archives, use [`zip_url`](<#zip_url>).
 
 >[!warning]
 >A method of checksum validation **must** be specified. This can be done by setting [`tarball_blake2b`](<#tarball_blake2b>), [`tarball_sha256`](<#tarball_sha256>), or [`tarball_sha512`](<#tarball_sha512>). You can set the value of any of these to `"?"` and Jinx will fill the recipe in for you on first download.
@@ -544,6 +587,9 @@ Specifies a URL to download a tarball from, to use as the source for this recipe
 >tarball_url="https://www.x.org/archive/individual/lib/xtrans-${version}.tar.gz"
 ># ...
 >```
+
+>[!note]
+>An archive that fails its checksum is left behind in `sources/` and reused as-is on the next run. If upstream really did replace the file, delete the stale archive by hand before retrying.
 
 #### `tarball_blake2b`
 
@@ -595,6 +641,46 @@ Example:
 tarball_sha512="172acc1bc70350b1f7e46063e98c4a5ce4dd3c245a7e7bd383d8fce4a44ea0d46057b55af0aa279cda1d4b1413e924377ccce9562cef9e83eb6e30fc136a383c"
 # ...
 ```
+
+#### `zip_url`
+
+- **Optional**.
+- Mutually exclusive with [`tarball_url`](<#tarball_url>), [`git_url`](<#git_url>) and [`source_dir`](<#source_dir>) (setting any of those alongside it is an error).
+
+Exactly like [`tarball_url`](<#tarball_url>), except that the downloaded archive is unpacked with `unzip` instead of `tar`. Checksums come from [`zip_blake2b`](<#zip_blake2b>), [`zip_sha256`](<#zip_sha256>) or [`zip_sha512`](<#zip_sha512>), which behave exactly like their `tarball_*` counterparts, `"?"` auto-fill included.
+
+`unzip` ships in the container's base image, so a `zip_url` recipe needs nothing extra to unpack its source.
+
+Example:
+
+```sh
+#! /bin/sh
+# recipes/test/recipe
+
+version=1.0.0
+# ...
+zip_url="https://example.com/test-${version}.zip"
+zip_sha256="97efeda496274082e4ed0edf641a7ce5559d4b030fd6b16547e2f13c6d9d00d5"
+# ...
+```
+
+#### `zip_blake2b`
+
+- **Required** for [`zip_url`](<#zip_url>) checksum (one of `zip_blake2b`, `zip_sha256`, `zip_sha512`).
+
+Specifies a BLAKE2B checksum for verifying the zip archive. Setting it to `"?"` makes Jinx auto-fill the value into the recipe on first download.
+
+#### `zip_sha256`
+
+- **Required** for [`zip_url`](<#zip_url>) checksum (one of `zip_blake2b`, `zip_sha256`, `zip_sha512`).
+
+Specifies a SHA256 checksum for verifying the zip archive. Setting it to `"?"` makes Jinx auto-fill the value into the recipe on first download.
+
+#### `zip_sha512`
+
+- **Required** for [`zip_url`](<#zip_url>) checksum (one of `zip_blake2b`, `zip_sha256`, `zip_sha512`).
+
+Specifies a SHA512 checksum for verifying the zip archive. Setting it to `"?"` makes Jinx auto-fill the value into the recipe on first download.
 
 #### `git_url`
 
@@ -693,6 +779,29 @@ builddeps="autoconf gettext-host"
 # ...
 ```
 
+#### `binpkgdeps`
+
+- **Optional.**
+- Space-separated list of recipes.
+- Normal recipes only.
+
+Specifies normal-recipe **runtime** dependencies that are recorded in the produced XBPS metadata exactly like [`deps`](<#deps>), but that create **no build-order edge**: Jinx will not build them before this recipe, and [`dry-run`](<#dry-run>) does not order them. This exists for the single case `deps` cannot express - a runtime dependency whose build-order edge would close a cycle, i.e. `a` needs `b` at run time while `b` needs `a` to build.
+
+The entries are real XBPS run-dependencies, so they still end up in a sysroot whenever this package is installed into one. That is why, when building a recipe, Jinx first builds any missing `binpkgdeps` of the packages in its dependency closure: `xbps-install` has to be able to resolve them while populating the build sysroot.
+
+Listing the same recipe in both `binpkgdeps` and `deps`/`builddeps` is an error, and each entry must name a recipe in `recipes/`. Entries whose recipe sets [`bootstrap_pkg=yes`](<#bootstrap_pkg>) are dropped from the metadata, just as with `deps`. [`revbump`](<#revbump>) does not follow `binpkgdeps` edges either; [`download`](<#download>) does.
+
+Example:
+
+```sh
+#! /bin/sh
+# recipes/a/recipe
+
+# ...
+binpkgdeps="b" # 'a' needs 'b' at run time, but 'b' needs 'a' to build.
+# ...
+```
+
 #### `hostdeps`
 
 - **Optional**.
@@ -736,7 +845,10 @@ hostrundeps="autoconf" # automake invokes autoconf at runtime, so consumers of a
 
 Specifies Debian packages that must be installed into the container environment before this recipe is built. This could be something like `build-essential` for a recipe that needs to compile C code, or `meson` for a recipe that builds with Meson.
 
-Each unique combination of `imagedeps` produces a cached container image under `.jinx-cache/sets/`, so reusing the same set across many recipes is cheap.
+Each unique combination of `imagedeps` produces a cached container image under `.jinx-cache/sets/`, so reusing the same set across many recipes is cheap. The list is sorted and de-duplicated first, then installed one package at a time into nested `sets/<pkg1>/<pkg2>/.../.image` directories, which means recipes whose sorted sets share a prefix also share the images cached for that prefix.
+
+>[!note]
+>`imagedeps` are packages of the *container image*. Under [`JINX_NATIVE_MODE=yes`](<#environment-variables>), a recipe that leaves [`cross_compile`](<#cross_compile>) unset runs with the sysroot itself as its container root, so no image - and therefore no `imagedeps` - is involved; such recipes have to get their build tools from `deps`/`builddeps` instead.
 
 Example:
 
@@ -773,11 +885,14 @@ allow_network=yes
 #### `cross_compile`
 
 - **Optional**.
-- `yes`/`no`. Default: `no`.
+- `yes`, or unset. Default: unset.
 
 When [`JINX_NATIVE_MODE=yes`](<#environment-variables>) is set, Jinx normally builds non-host recipes by mounting the sysroot directly as the container root. Setting `cross_compile=yes` on a recipe forces Jinx to use the cross-compile flow (separate sysroot mounted at `/sysroot`) regardless of `JINX_NATIVE_MODE`. This is the right choice for recipes that fundamentally need a cross-toolchain, such as `binutils` or `gcc` targeting a non-host architecture.
 
-Has no effect when `JINX_NATIVE_MODE` is not set.
+Has no effect when `JINX_NATIVE_MODE` is not set. Host recipes and the source-preparation stages always use the cross-compile flow anyway.
+
+>[!warning]
+>Set this to `yes` or leave it out entirely; `cross_compile=no` is *not* the same as leaving it unset. Container setup only tests whether the property is non-empty, so `no` selects the cross-compile flow there while the rest of the run still treats the recipe as native - leaving the build container without its sysroot and without its host packages.
 
 Example:
 
@@ -826,6 +941,29 @@ clean_workdirs=no
 # ...
 ```
 
+#### `conf_files`
+
+- **Optional**.
+- Space-separated list of absolute paths.
+
+Marks files shipped by this recipe as configuration files in the XBPS metadata. XBPS then leaves a locally modified copy alone when the package is upgraded, installing the packaged version next to it (as `<file>.new-<version>`) instead of overwriting the local one.
+
+Paths are absolute, exactly as they appear in the installed system - that is, the path a file ends up at under `dest_dir`, with `dest_dir` itself stripped off. Works the same way for normal and host recipes.
+
+Example:
+
+```sh
+#! /bin/sh
+# recipes/test/recipe
+
+# ...
+conf_files="/etc/test/test.conf /etc/test/policy.conf"
+package() {
+	DESTDIR="${dest_dir}" make install # installs ${dest_dir}/etc/test/test.conf
+}
+# ...
+```
+
 #### `source_*`
 
 - **Optional**.
@@ -836,6 +974,8 @@ Recipes may also provide `source_deps`, `source_imagedeps`, `source_hostdeps`, a
 2. **When this recipe is referenced by another recipe via [`from_source`](<#from_source>)**, they fully replace the consuming recipe's corresponding properties (`deps`, `imagedeps`, `hostdeps`, `allow_network`) for the duration of the source-preparation stages.
 
 In both cases, the replacement is unconditional: an unset `source_*` means *empty* during source prep, not "inherit from the regular property". If you set any `source_*`, set every `source_*` you need.
+
+`source_imagedeps` covers all of source preparation, fetching included, and is the only way to add a package to that container: a recipe's plain `imagedeps` are not consulted there. `source_allow_network`, on the other hand, only governs the [`prepare()`](<#prepare>) stage: fetching and patching (and therefore [`early_prepare()`](<#early_prepare>), which runs with the fetch) always have the network enabled, since that is how sources are downloaded in the first place.
 
 This split is essential when source preparation needs different tools/network access than the actual build (for example, fetching submodules requires network and `git`, but the build itself does not).
 
@@ -865,7 +1005,7 @@ The very first bit of recipe logic to run. `early_prepare()` is invoked **after*
 
 Use it for tasks that must run on a pristine, unpatched source tree. For example, downloading additional vendored sources that the project's own build scripts expect, or removing files that should not be patched.
 
-This function is run with the `source_*` dependencies (see [`source_*`](<#source_>)) when the recipe is referenced as a source.
+This function is run with the `source_*` dependencies (see [`source_*`](<#source_>)) when the recipe is referenced as a source. It shares the container with the source fetch, which always has network access, so downloads work here without setting `source_allow_network`.
 
 Example:
 
@@ -873,8 +1013,6 @@ Example:
 #! /bin/sh
 # recipes/gcc/recipe
 
-# ...
-source_allow_network=yes
 # ...
 early_prepare() {
 	./contrib/download_prerequisites
@@ -966,7 +1104,7 @@ package() {
 >The `package()` function is also a good place for post-install actions like binary stripping or generating wrapper scripts.
 
 >[!note]
->After `package()` returns, Jinx removes any `*.la` libtool files from the package directory, since they generally cause more trouble than they solve.
+>After `package()` returns, Jinx removes any `*.la` libtool files from under `${dest_dir}${prefix}`, since they generally cause more trouble than they solve.
 
 ### Provided Variables
 
@@ -974,11 +1112,11 @@ In addition to the recipe's own [Properties](<#properties>) and anything the [Ji
 
 | Variable | Description |
 |---|---|
-| `name` | The package name. Inferred from the recipe's directory basename (e.g. `recipes/xz/recipe` produces `name=xz`). |
+| `name` | The package name. Inferred from the recipe's directory basename (e.g. `recipes/xz/recipe` produces `name=xz`). Recipes must not override it: Jinx rejects a recipe that assigns a `name` other than its own directory's. |
 | `recipe_dir` | Absolute path to the recipe's own directory (the one containing the `recipe` file and the optional `patches/` subdirectory). Useful for shipping additional files alongside the recipe and referencing them from `configure()`/`build()`/`package()`. |
 | `source_dir` | Path to the unpacked source tree (e.g. `/base_dir/sources/<name>` for normal recipes, `/base_dir/host-sources/<name>` for host recipes, inside the container). |
 | `prefix` | Install prefix. `/usr` for normal recipes, `/usr/local` for host recipes. |
-| `sysroot` | Path to the populated sysroot in the container (`/sysroot`). |
+| `sysroot` | Path to the populated sysroot in the container (`/sysroot`). Not present under [`JINX_NATIVE_MODE=yes`](<#environment-variables>) for a recipe that leaves [`cross_compile`](<#cross_compile>) unset, since there the container root *is* the sysroot. |
 | `dest_dir` | Where `package()` should `make install` to. Jinx packs this into an XBPS file: `pkgs/` for normal recipes, `host-pkgs/` for host recipes. |
 | `parallelism` | Suggested `make -j` value. From `JINX_PARALLELISM` or auto-detected. |
 | `base_dir` | The project's source directory. `/base_dir` inside the container; absolute host path outside. |
@@ -991,7 +1129,9 @@ Recipes should treat these as read-only.
 
 Located in `host-recipes/`, host recipes describe packages that should be built for the host system, as opposed to the target system. The recipes are still built within the container. Host recipes are valuable for building cross-compiler toolchains, code generators, and other tools used during the build of normal recipes.
 
-Host recipes can declare their own sources inline (`tarball_url`, `git_url`, `source_dir`, `early_prepare()`, `prepare()`, `source_*` properties, etc.), exactly the same way normal recipes do. Alternatively, they can pull sources from another recipe via [`from_source`](<#from_source>) (resolving against `recipes/`) or [`from_host_source`](<#from_host_source>) (resolving against `host-recipes/`, useful when several host recipes need to share a single source tree).
+Host recipes can declare their own sources inline (`tarball_url`, `zip_url`, `git_url`, `source_dir`, `early_prepare()`, `prepare()`, `source_*` properties, etc.), exactly the same way normal recipes do. Alternatively, they can pull sources from another recipe via [`from_source`](<#from_source>) (resolving against `recipes/`) or [`from_host_source`](<#from_host_source>) (resolving against `host-recipes/`, useful when several host recipes need to share a single source tree).
+
+A host recipe may also list [`deps`](<#deps>)/[`builddeps`](<#builddeps>). Those name normal recipes, are built for the target, and are installed into the `/sysroot` its container sees - this is how a cross-toolchain gets the target headers and libraries it is built against. They are *not* recorded as dependencies of the resulting host package; only [`hostrundeps`](<#hostrundeps>) are. [`binpkgdeps`](<#binpkgdeps>) is a normal-recipe property and has no effect in `host-recipes/`, while [`conf_files`](<#conf_files>) behaves identically for both.
 
 Host recipes are built into XBPS packages just like normal recipes, kept in `host-pkgs/` with its own XBPS repository index. The package filename is `<name>-<version>_<revision>.<host-arch>.xbps`, where `<host-arch>` is the build machine's architecture (`uname -m`) - host tools are native to the build machine, so this is independent of `JINX_ARCH` (the target arch). When a recipe needs host dependencies, Jinx `xbps-install`s them on the fly into the build container's `/usr/local` during container preparation, exactly the way normal `deps` are installed into the sysroot; `hostrundeps` are recorded as the host package's XBPS run-dependencies. Host recipes get a `.host-revision` marker that is the exact counterpart of a normal recipe's `.revision` (it records the `revision` the source tree was last prepared for and forces a source re-clean when the recipe's `revision` changes - the `version` axis is handled separately by `.version` - gated off for `from_source`/`from_host_source` consumers in the same way). Consequently a `version`/`revision` bump on a host recipe triggers a rebuild, and [`update`](<#update>)/[`dry-run`](<#dry-run>)/[`build`](<#build>)/[`rebuild`](<#rebuild>) treat host recipes by their XBPS file identically to normal recipes.
 
@@ -1007,10 +1147,10 @@ Jinx provides a fairly reasonable way to patch existing software sources for the
 
 Patches always belong to the **source recipe** - i.e. the recipe that declares the actual `tarball_url`/`git_url`/`source_dir`. Consumer recipes that pull sources via [`from_source`](<#from_source>) or [`from_host_source`](<#from_host_source>) **cannot have their own `patches/`** directory; attempting to do so is a hard error. If you need a patch, add it to the source recipe's `patches/` (where it applies to every consumer that shares the source).
 
-Patches are applied in this order:
+Every patch is applied with `patch -p1` from the root of the source tree, in this order:
 
 1. All files in `<dir>/<name>/patches/` other than `jinx-working-patch.patch`, in the order returned by shell glob expansion (lexicographic).
-2. A snapshot of the source tree is then saved as `sources/<name>-clean/` (the "clean reference" used by [`regenerate`](<#regenerate>) to compute the working patch).
+2. A snapshot of the source tree is then saved as `sources/<name>-clean/` (`host-sources/<name>-clean/` for a host recipe) - the "clean reference" used by [`regenerate`](<#regenerate>) to compute the working patch.
 3. `<dir>/<name>/patches/jinx-working-patch.patch` is applied last, if present.
 
 Steps 1 and 3 happen *before* the [`prepare()`](<#prepare>) stage but *after* [`early_prepare()`](<#early_prepare>).
@@ -1022,7 +1162,7 @@ Steps 1 and 3 happen *before* the [`prepare()`](<#prepare>) stage but *after* [`
 >3. Run `jinx regen <recipe>` to fold those edits into `<dir>/<recipe>/patches/jinx-working-patch.patch`.
 >4. Run `jinx rebuild <recipe>` to verify.
 >
->Static patches that you don't want `regen` to fold into can be dropped into `<dir>/<recipe>/patches/` under any name other than `jinx-working-patch.patch`.
+>Static patches that you don't want `regen` to fold into can be dropped into `<dir>/<recipe>/patches/` under any name other than `jinx-working-patch.patch`. Undoing the edits and running `regen` once more deletes the working patch again.
 
 >[!tip]
 >If you'd rather author patches outside Jinx's `regen` workflow, the standard `diff` command works:
