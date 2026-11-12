@@ -842,10 +842,21 @@ bind_mount_cmd() {
 }
 
 run_in_container() {
+    local lo_up=
     if [[ ${allow_network} == yes ]]; then
         local unshare_net_flag=""
     else
         local unshare_net_flag="--net"
+        # A new network namespace starts with its loopback interface down, but
+        # builds and test suites expect to reach localhost.
+        lo_up="$(printf '%q ' perl -MSocket -e '
+            socket(my $s, PF_INET, SOCK_DGRAM, 0) or die "jinx: socket: $!\n";
+            my $ifr = pack("a16", "lo");
+            # SIOCGIFFLAGS, then SIOCSIFFLAGS with IFF_UP added.
+            ioctl($s, 0x8913, $ifr) or die "jinx: cannot read the flags of lo: $!\n";
+            ioctl($s, 0x8914, pack("a16 s", "lo", unpack("x16 s", $ifr) | 1))
+                or die "jinx: cannot bring lo up: $!\n";
+        ')"
     fi
 
     local run_in_cont_term=
@@ -904,6 +915,8 @@ run_in_container() {
 
     unshare --user --map-root-user --mount --pid --fork ${unshare_net_flag} -- "$BASH" -c "
         set -e
+
+        ${lo_up}
 
         $(bind_mount_cmd "${imgroot}" "${imgroot}" ro)
 

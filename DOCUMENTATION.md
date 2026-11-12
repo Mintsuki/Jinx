@@ -928,7 +928,7 @@ imagerundeps="libssl3t64" # the host rustc loads Debian's libssl at run time, so
 - **Optional**.
 - `yes`/`no`. Default: `no`.
 
-If `yes`, the build container is given access to the network. Otherwise, the container is run with `--net` and is fully isolated from the network.
+If `yes`, the build container is given access to the network. Otherwise, the container is run with `--net` and is fully isolated from the network, with only its own loopback interface, so that it can still reach `localhost`.
 
 >[!warning]
 >This must not be relied on for security when building untrusted recipes. The container is **not** a virtual machine.
