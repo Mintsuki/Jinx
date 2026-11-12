@@ -944,11 +944,12 @@ run_in_container() {
 
             cd /build_dir
 
+            # A native sysroot need not have its /bin merged into /usr/bin.
             LD_PRELOAD=/nochown.so \
             HOME=/root \
             LANG=${run_in_cont_lang} \
             LC_COLLATE=C \
-            PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin \
+            PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
             LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:/usr/lib64:/usr/lib \
             ${run_in_cont_term} \
             ${run_in_cont_colorterm} \
