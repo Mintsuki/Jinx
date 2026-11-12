@@ -284,7 +284,7 @@ jinx install [-f] <sysroot> <package(s)>
 
 Installs the specified package(s) into the given system root directory. Each package is built first if it has not been built yet (unless Jinx is invoked as root, in which case it errors out instead of attempting a build).
 
-The `-f` flag **forces** the installation, removing any pre-existing version of the package from the sysroot beforehand. After installation, Jinx checks for file conflicts between the packages that invocation installed; if any duplicate paths are detected, it lists them and exits with an error. Packages that earlier invocations installed into the same sysroot are not compared against, and XBPS itself lets a package overwrite their files, so install everything that must not conflict in one invocation.
+The `-f` flag **forces** the installation, removing any pre-existing version of the package from the sysroot beforehand. Before installing anything, Jinx checks for file conflicts between the packages that invocation installs; if any duplicate paths are detected, it lists them and exits with an error, leaving the sysroot alone. The packages are then installed in one XBPS transaction. Packages that earlier invocations installed into the same sysroot are not compared against, and XBPS itself lets a package overwrite their files, so install everything that must not conflict in one invocation.
 
 >[!note]
 >`install` is the only command allowed to run as root, since populating a sysroot may require root privileges depending on file ownership/permissions. Should the cache need rebuilding at that point (after a Jinx upgrade, say), the rebuild runs as the user who owns the cache directory, so that the cache stays theirs; without a cache at all, run any command as that user first.

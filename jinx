@@ -2466,39 +2466,24 @@ cmd_install() {
 ^\./REMOVE$
 /\.keep$'
 
+    if [[ -z ${pkgs_to_install} ]]; then
+        return
+    fi
+
     make_temp
     local all_files="${tmp}"
 
+    local pkg_path
     for pkg in ${pkgs_to_install}; do
-        msg "Installing ${pkg}"
-
-        tracked_subshell '
-        local pkg_path
         pkg_path="$(pkg_file recipes "${pkg}")"
-
         if [[ ! -f ${pkg_path} ]]; then
             if [[ $(id -u) == 0 ]]; then
                 die "a package needs to be built, but Jinx was invoked as root"
             fi
-            tracked_subshell '\''do_pkg recipes "${pkg}"'\''
+            tracked_subshell 'do_pkg recipes "${pkg}"'
         fi
-
-        # xbps seems to only install the package every second time when reinstalling.
-        # Remove the package to be sure it gets reinstalled.
-        if [[ -n ${force_install} ]]; then
-            XBPS_ARCH=invalid \
-            XBPS_TARGET_ARCH="${JINX_ARCH}" \
-                xbps-remove -Ffy -r "${sysroot}" ${pkg} >/dev/null 2>&1 || true
-        fi
-
-        XBPS_ARCH=invalid \
-        XBPS_TARGET_ARCH="${JINX_ARCH}" \
-            run_quietly "failed to install ${pkg}:" \
-                xbps-install -y $force_install -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} \
-            || exit 1
 
         pkg_file_list "${pkg_path}" >>"${all_files}"
-        '
     done
 
     msg "Checking for file conflicts"
@@ -2533,6 +2518,25 @@ cmd_install() {
         done
         exit 1
     fi
+
+    msg "Installing into ${sysroot}"
+    for pkg in ${pkgs_to_install}; do
+        msg2 "${pkg}"
+    done
+
+    # xbps seems to only install a package every second time when reinstalling
+    # it, so remove the packages to be sure they get reinstalled.
+    if [[ -n ${force_install} ]]; then
+        XBPS_ARCH=invalid \
+        XBPS_TARGET_ARCH="${JINX_ARCH}" \
+            xbps-remove -Ffy -r "${sysroot}" ${pkgs_to_install} >/dev/null 2>&1 || true
+    fi
+
+    XBPS_ARCH=invalid \
+    XBPS_TARGET_ARCH="${JINX_ARCH}" \
+        run_quietly "failed to install the packages:" \
+            xbps-install -y $force_install -r "${sysroot}" -R "${build_dir}"/pkgs ${pkgs_to_install} \
+        || exit 1
 }
 
 reinit_container() {
