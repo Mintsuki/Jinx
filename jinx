@@ -2097,18 +2097,21 @@ cmd_download_for() {
     # (builddeps, hostdeps, and anything the source step needs) are irrelevant.
     local -A pkg_deps
     local -A bootstrap
-    for pkg in $(cd "${base_dir}/${recipes_dir}" && echo *); do
+
+    # Only the recipes reached from the requested packages are evaluated.
+    download_info() {
+        [[ -n ${pkg_deps[$1]+x} ]] && return
         local info
         if [[ ${recipes_dir} == recipes ]]; then
-            info=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/${pkg}")" \
+            info=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/$1")" \
                 && echo "${bootstrap_pkg}|${deps} ${binpkgdeps}")
         else
-            info=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/${pkg}")" \
+            info=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/$1")" \
                 && echo "|${hostrundeps}")
         fi
-        bootstrap[$pkg]="${info%%|*}"
-        pkg_deps[$pkg]="${info#*|}"
-    done
+        bootstrap[$1]="${info%%|*}"
+        pkg_deps[$1]="${info#*|}"
+    }
 
     local -A collected
 
@@ -2116,12 +2119,13 @@ cmd_download_for() {
         local pkg="$1"
         [[ -n ${collected[$pkg]+x} ]] && return
         collected[$pkg]=1
+        download_info "${pkg}"
         local dep
         for dep in ${pkg_deps[$pkg]}; do
-            [[ -n $dep ]] || continue
+            download_info "${dep}"
             # do_pkg keeps a bootstrap package out of what it records, so
             # nothing downloaded will ever ask xbps to resolve one.
-            [[ ${bootstrap[$dep]-} == yes ]] && continue
+            [[ ${bootstrap[$dep]} == yes ]] && continue
             collect_all_deps "$dep"
         done
     }
