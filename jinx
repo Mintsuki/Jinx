@@ -776,6 +776,16 @@ prepare_container() {
     fi
 }
 
+# The commands that bind-mount $1 onto $2, read-only if $3 is non-empty. The
+# separate remount is what makes it read-only: busybox's mount ignores ro when
+# it creates a bind mount.
+bind_mount_cmd() {
+    printf "mount --bind '%s' '%s'\n" "$1" "$2"
+    if [[ -n ${3-} ]]; then
+        printf "mount -o remount,bind,ro '%s'\n" "$2"
+    fi
+}
+
 run_in_container() {
     if [[ ${allow_network} == yes ]]; then
         local unshare_net_flag=""
@@ -807,8 +817,8 @@ run_in_container() {
     if [[ ($JINX_NATIVE_MODE == yes && $cross_compile == yes) || $JINX_NATIVE_MODE != yes ]]; then
         mkdir -p "${imgroot}/sysroot"
 
-        local container_pkgs_native_mount="mount -o ro --bind '${container_pkgs}' '${imgroot}/usr/local'"
-        local sysroot_native_mount="mount -o ro --bind '${sysroot}' '${imgroot}/sysroot'"
+        local container_pkgs_native_mount="$(bind_mount_cmd "${container_pkgs}" "${imgroot}/usr/local" ro)"
+        local sysroot_native_mount="$(bind_mount_cmd "${sysroot}" "${imgroot}/sysroot" ro)"
 
         local run_in_cont_lang=en_US.UTF-8
     else
@@ -839,7 +849,7 @@ run_in_container() {
     unshare --user --map-root-user --mount --pid --fork ${unshare_net_flag} -- "$BASH" -c "
         set -e
 
-        mount -o ro --bind '${imgroot}' '${imgroot}'
+        $(bind_mount_cmd "${imgroot}" "${imgroot}" ro)
 
         mount --rbind --make-rslave /dev '${imgroot}/dev'
         mount -t proc proc '${imgroot}/proc'
@@ -848,12 +858,12 @@ run_in_container() {
         mount -t tmpfs tmpfs '${imgroot}/tmp'
         mount -t tmpfs tmpfs '${imgroot}/var/tmp'
 
-        mount -o ro --bind '${script}' '${imgroot}/jinx'
-        mount ${container_base_dir_ro} --bind '${base_dir}' '${imgroot}/base_dir'
+        $(bind_mount_cmd "${script}" "${imgroot}/jinx" ro)
+        $(bind_mount_cmd "${base_dir}" "${imgroot}/base_dir" "${container_base_dir_ro}")
         mount --bind '${base_dir}/.jinx-cache/tmp' '${imgroot}/base_dir/.jinx-cache/tmp'
         mount --bind '${build_dir}' '${imgroot}/build_dir'
-        mount ${container_sources_ro} --bind '${base_dir}/sources' '${imgroot}/base_dir/sources'
-        mount ${container_sources_ro} --bind '${base_dir}/host-sources' '${imgroot}/base_dir/host-sources'
+        $(bind_mount_cmd "${base_dir}/sources" "${imgroot}/base_dir/sources" "${container_sources_ro}")
+        $(bind_mount_cmd "${base_dir}/host-sources" "${imgroot}/base_dir/host-sources" "${container_sources_ro}")
         ${container_pkgs_native_mount}
         ${sysroot_native_mount}
         ${shadow_git_dir_base}
@@ -1432,7 +1442,7 @@ do_source() {
                 || [[ -n ${tarball_sha256} && ${tarball_sha256} == "?" ]] \
                 || [[ -n ${tarball_sha512} && ${tarball_sha512} == "?" ]] \
                 || [[ -n ${tarball_blake2b} && ${tarball_blake2b} == "?" ]] \
-                || local container_base_dir_ro="-o ro"
+                || local container_base_dir_ro=yes
             run_in_container internal-fetch '$1' '$2'
             echo "${version}" >"${base_dir}"/${_sources_root}/'$1'.version
         '
@@ -1458,7 +1468,7 @@ do_source() {
         tracked_subshell '
             local container_base_dir_ro=
             if [[ ${is_sourceless_package} != true ]]; then
-                [[ ${is_local_package} == true ]] || local container_base_dir_ro="-o ro"
+                [[ ${is_local_package} == true ]] || local container_base_dir_ro=yes
                 run_in_container internal-prepare '$1' '$2'
             fi
             touch "${base_dir}"/${_sources_root}/'$1'.prepared
@@ -1583,7 +1593,7 @@ do_host_pkg() {
     local container_base_dir_ro=
     prepare_container
 
-    local container_sources_ro="-o ro"
+    local container_sources_ro=yes
     if [[ ! -d "${build_dir}/host-builds/$1" ]]; then
         msg2 "Running configure()"
         run_in_container internal-configure-host $1
@@ -1676,7 +1686,7 @@ do_pkg() {
     local container_base_dir_ro=
     prepare_container
 
-    local container_sources_ro="-o ro"
+    local container_sources_ro=yes
     if [[ ! -d "${build_dir}/builds/$1" ]]; then
         msg2 "Running configure()"
         run_in_container internal-configure $1
