@@ -139,7 +139,7 @@ Additionally, the **source directory** will gain a few extra entries during use:
 
 ```
 example-source/
-|-- .jinx-cache/    # XBPS, debootstrap, container image cache, build lock
+|-- .jinx-cache/    # tools, container images, downloaded archives, build lock
 |-- sources/        # downloaded/cloned sources for recipes/
 \-- host-sources/   # downloaded/cloned sources for host-recipes/
 ```
@@ -339,7 +339,7 @@ Useful for interactive debugging of build failures, running utilities against a 
 
 #### `rebuild-cache`
 
-Purges and re-creates `.jinx-cache/`. This re-downloads XBPS, re-runs `debootstrap`, and rebuilds the base container image. Run this if the cache becomes corrupt; otherwise, Jinx automatically refreshes the cache when its version, the Debian snapshot, the base packages list, or the CMake platform file (its path or its contents) change.
+Purges and re-creates `.jinx-cache/`, keeping only the downloaded source archives (see [`tarball_url`](<#tarball_url>)). This re-downloads XBPS, re-runs `debootstrap`, and rebuilds the base container image. Run this if the cache becomes corrupt; otherwise, Jinx automatically refreshes the cache when its version, the Debian snapshot, the base packages list, or the CMake platform file (its path or its contents) change.
 
 ## Rebuild Behaviour
 
@@ -587,7 +587,7 @@ from_host_source="gcc-host" # Refers to host-recipes/gcc-host.
 
 - **Optional**.
 
-Specifies a URL to download a tarball from, to use as the source for this recipe. The archive is downloaded into `sources/`, verified against a checksum, unpacked with `tar` and then deleted. Mutually exclusive with [`git_url`](<#git_url>), [`source_dir`](<#source_dir>) and [`zip_url`](<#zip_url>) - for `.zip` archives, use [`zip_url`](<#zip_url>).
+Specifies a URL to download a tarball from, to use as the source for this recipe. The archive is downloaded, verified against a checksum, and unpacked with `tar`. Mutually exclusive with [`git_url`](<#git_url>), [`source_dir`](<#source_dir>) and [`zip_url`](<#zip_url>) - for `.zip` archives, use [`zip_url`](<#zip_url>).
 
 >[!warning]
 >A method of checksum validation **must** be specified. This can be done by setting [`tarball_blake2b`](<#tarball_blake2b>), [`tarball_sha256`](<#tarball_sha256>), or [`tarball_sha512`](<#tarball_sha512>). You can set the value of any of these to `"?"` and Jinx will fill the recipe in for you on first download.
@@ -605,8 +605,10 @@ Specifies a URL to download a tarball from, to use as the source for this recipe
 ># ...
 >```
 
+Jinx keeps downloaded archives in `.jinx-cache/distfiles/`, so that fetching a source again, even after a rebuild of the cache, needs no download. Each is named after the first checksum that its recipe sets, out of SHA256, SHA512, and BLAKE2B, such as `sha256-<checksum>`; an archive put there by hand under that name is used without downloading anything. The directory can be deleted whenever no Jinx is running, to reclaim space.
+
 >[!note]
->An archive that fails its checksum is left behind in `sources/` and reused as-is on the next run. If upstream really did replace the file, delete the stale archive by hand before retrying.
+>An archive that fails its checksum is not kept, so the next run downloads it again. If upstream really did replace the file, update the checksum.
 
 #### `tarball_blake2b`
 

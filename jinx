@@ -863,7 +863,8 @@ run_in_container() {
         local run_in_cont_no_color="NO_COLOR=1"
     fi
 
-    mkdir -p "${imgroot}/base_dir" "${imgroot}/build_dir" "${imgroot}/jinx-tmp"
+    mkdir -p "${JINX_CACHE_DIR}/distfiles"
+    mkdir -p "${imgroot}/base_dir" "${imgroot}/build_dir" "${imgroot}/jinx-tmp" "${imgroot}/jinx-distfiles"
     cat /etc/resolv.conf >"${imgroot}/etc/resolv.conf"
     touch "${imgroot}/jinx"
 
@@ -916,6 +917,7 @@ run_in_container() {
         $(bind_mount_cmd "${script}" "${imgroot}/jinx" ro)
         $(bind_mount_cmd "${base_dir}" "${imgroot}/base_dir" "${container_base_dir_ro}")
         mount --bind '${tmp_dir}' '${imgroot}/jinx-tmp'
+        mount --bind '${JINX_CACHE_DIR}/distfiles' '${imgroot}/jinx-distfiles'
         mount --bind '${build_dir}' '${imgroot}/build_dir'
         $(bind_mount_cmd "${base_dir}/sources" "${imgroot}/base_dir/sources" "${container_sources_ro}")
         $(bind_mount_cmd "${base_dir}/host-sources" "${imgroot}/base_dir/host-sources" "${container_sources_ro}")
@@ -945,7 +947,7 @@ run_in_container() {
         '
     "
 
-    force_remove "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/build_dir" "${imgroot}/jinx-tmp" "${imgroot}/jinx"
+    force_remove "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/build_dir" "${imgroot}/jinx-tmp" "${imgroot}/jinx-distfiles" "${imgroot}/jinx"
     rm "${imgroot}/etc/resolv.conf"
 }
 
@@ -977,17 +979,29 @@ do_git_fetch() {
 }
 
 do_tarball_fetch() {
-    local tarball_path="${base_dir}/${_sources_root}/$(basename "${tarball_url}")"
-
-    if [[ ! -f $tarball_path ]]; then
-        make_temp
-        local download_path="${tmp}"
-
-        curl -f -L -o "${download_path}" "${tarball_url}"
-        mv "${download_path}" "${tarball_path}"
+    # Downloaded archives stay in the cache, named after the first checksum
+    # that the recipe sets, so that a source fetched again needs no download.
+    local algo var cache_algo= cache_sum=
+    for algo in sha256 sha512 blake2b; do
+        var="tarball_${algo}"
+        if [[ -n ${!var} ]]; then
+            cache_algo="${algo}"
+            cache_sum="${!var}"
+            break
+        fi
+    done
+    if [[ -z ${cache_algo} ]]; then
+        die "recipe '${name}' sets no checksum for its archive"
     fi
 
-    local checksum_verified=no
+    local cached="/jinx-distfiles/${cache_algo}-${cache_sum}"
+    local tarball_path="${cached}"
+    if [[ ${cache_sum} == "?" || ! -f ${cached} ]]; then
+        # Downloaded next to the cached archives, to get there by a rename.
+        tarball_path="$(mktemp /jinx-distfiles/.download.XXXXXXXX)"
+        temp_collect+=("${tarball_path}")
+        curl -f -L -o "${tarball_path}" "${tarball_url}"
+    fi
 
     fill_recipe_checksum() {
         local var_name="$1"
@@ -1019,7 +1033,7 @@ do_tarball_fetch() {
         fi
     }
 
-    local algo var expected actual
+    local expected actual
     for algo in sha256 sha512 blake2b; do
         var="tarball_${algo}"
         expected="${!var}"
@@ -1036,16 +1050,22 @@ do_tarball_fetch() {
             if [[ ${expected} == "?" ]]; then
                 fill_recipe_checksum "${_checksum_prefix}_${algo}" "${actual}"
             else
+                # Not kept, so that a damaged archive in the cache gets
+                # downloaded again.
+                rm -f "${tarball_path}"
                 die "failed to verify the ${algo^^} of ${name}'s source:
   expected '${expected}'
   got      '${actual}'"
             fi
         fi
-        checksum_verified=yes
+        if [[ ${algo} == "${cache_algo}" ]]; then
+            cached="/jinx-distfiles/${algo}-${actual}"
+        fi
     done
 
-    if [[ ${checksum_verified} == no ]]; then
-        die "recipe '${name}' sets no checksum for its archive"
+    if [[ ${tarball_path} != "${cached}" ]]; then
+        mv "${tarball_path}" "${cached}"
+        tarball_path="${cached}"
     fi
 
     make_temp -d
@@ -1062,7 +1082,7 @@ do_tarball_fetch() {
         mv "${extract_dir}"/* "${base_dir}"/${_sources_root}/${name}/
     )
 
-    force_remove "${extract_dir}" "${tarball_path}"
+    force_remove "${extract_dir}"
 }
 
 get_real_source_dir() {
@@ -2908,14 +2928,17 @@ redo_first_use() {
         msg "Purging the old Jinx cache"
     fi
 
-    # Everything except the lock file: it is held open right now, and removing
-    # it drops the mutual exclusion for the rest of this run and leaves the
-    # next run - possibly a 'jinx install' as root - to recreate it.
+    # Everything except the lock file, and the downloaded archives, which do not
+    # depend on anything that the cache gets rebuilt for. The lock file is held
+    # open right now, and removing it drops the mutual exclusion for the rest of
+    # this run and leaves the next run - possibly a 'jinx install' as root - to
+    # recreate it.
     local -a _stale=()
     local _entry
     for _entry in "${JINX_CACHE_DIR}"/* "${JINX_CACHE_DIR}"/.[!.]*; do
         [[ -e ${_entry} || -L ${_entry} ]] || continue
         [[ ${_entry} == "${JINX_CACHE_DIR}/jinx.lock" ]] && continue
+        [[ ${_entry} == "${JINX_CACHE_DIR}/distfiles" ]] && continue
         _stale+=("${_entry}")
     done
     if (( ${#_stale[@]} > 0 )); then
