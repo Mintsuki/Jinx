@@ -783,6 +783,9 @@ prepare_container() {
     make_temp -d
     sysroot="${tmp}"
 
+    # One at a time: a bootstrap package and the package that it stands in for
+    # can both end up here, and xbps refuses their shared files in a single
+    # transaction.
     local dep
     for dep in "${!_deps_collected[@]}"; do
         XBPS_ARCH=invalid \
