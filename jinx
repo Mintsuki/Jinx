@@ -537,53 +537,6 @@ ${dep}:$(eval "$(include_recipe "${base_dir}/recipes/${dep}")" && echo ${deps})"
     topo_sort "${graph}"
 }
 
-get_hostdeps_builddeps() {
-    # Similar to get_builddeps, but for host recipes.
-    # Builds a topological ordering of host recipe dependencies.
-    local hostpkg="$1"
-
-    eval "$(include_recipe "${base_dir}/host-recipes/${hostpkg}")"
-
-    local -A _hostdeps_collected
-
-    get_hostdeps_file_for_topo
-
-    local graph="${hostpkg}:${hostdeps} ${hostrundeps}"
-    if [[ -n ${hostdeps} || -n ${hostrundeps} ]]; then
-        local graph="${graph//: /:}"
-    fi
-
-    local hostdep
-    for hostdep in "${!_hostdeps_collected[@]}"; do
-        if [[ ! -f "${base_dir}/host-recipes/${hostdep}/recipe" ]]; then
-            die "$0: host dependency '${hostdep}' for host recipe '${hostpkg}' not found"
-        fi
-
-        local graph="${graph}
-${hostdep}:$(eval "$(include_recipe "${base_dir}/host-recipes/${hostdep}")" && echo ${hostdeps} ${hostrundeps})"
-    done
-
-    topo_sort "${graph}"
-}
-
-get_hostdeps_file_for_topo() {
-    # Collects all host dependencies recursively for use in topological sort.
-    local deps_to_do=""
-
-    local hostdep
-    for hostdep in ${hostdeps} ${hostrundeps}; do
-        if [[ -z ${_hostdeps_collected[$hostdep]+x} ]]; then
-            local deps_to_do="${deps_to_do} ${hostdep}"
-            _hostdeps_collected[$hostdep]=1
-        fi
-    done
-
-    for hostdep in ${deps_to_do}; do
-        eval "$(include_recipe "${base_dir}"/host-recipes/${hostdep})"
-        get_hostdeps_file_for_topo
-    done
-}
-
 get_source_deps() {
     # Source-level deps of recipe $1 in $2, as '<source_hostdeps>|<source_deps>'.
     # A recipe using from_source/from_host_source borrows them from the recipe
