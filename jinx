@@ -1605,7 +1605,8 @@ do_regen() {
         local _regen_patches_dir="${base_dir}/${_from_source_dir}/$1/patches"
         if [[ -s "${patch_file}" ]]; then
             mkdir -p "${_regen_patches_dir}"
-            mv "${patch_file}" "${_regen_patches_dir}/jinx-working-patch.patch"
+            # Moving the file would keep the private mode that mktemp gave it.
+            cat "${patch_file}" >"${_regen_patches_dir}/jinx-working-patch.patch"
         else
             rm -f "${_regen_patches_dir}/jinx-working-patch.patch"
             rmdir "${_regen_patches_dir}" 2>/dev/null || true
