@@ -349,6 +349,13 @@ fi
 
 apt_cache="$JINX_CACHE_DIR/apt-cache"
 
+if [[ ${in_container} == false ]]; then
+    tmp_dir="${JINX_CACHE_DIR}/tmp"
+else
+    # Where run_in_container mounts the cache's tmp/, wherever the cache is.
+    tmp_dir=/jinx-tmp
+fi
+
 force_remove() {
     rm -rf "$@" 2>/dev/null && return
     # Only a directory without write or search permission can block deletion,
@@ -373,7 +380,7 @@ cleanup() {
 trap 'tmp_ret=$?; set +e; cleanup; trap - EXIT; exit ${tmp_ret}' INT TERM HUP QUIT EXIT
 
 make_temp() {
-    tmp="$(mktemp ${1-} "$JINX_CACHE_DIR/tmp/tmp.XXXXXXXX")"
+    tmp="$(mktemp ${1-} "${tmp_dir}/tmp.XXXXXXXX")"
     temp_collect+=("${tmp}")
 }
 
@@ -825,7 +832,7 @@ run_in_container() {
         local run_in_cont_no_color="NO_COLOR=1"
     fi
 
-    mkdir -p "${imgroot}/base_dir" "${imgroot}/build_dir"
+    mkdir -p "${imgroot}/base_dir" "${imgroot}/build_dir" "${imgroot}/jinx-tmp"
     cat /etc/resolv.conf >"${imgroot}/etc/resolv.conf"
     touch "${imgroot}/jinx"
 
@@ -877,7 +884,7 @@ run_in_container() {
 
         $(bind_mount_cmd "${script}" "${imgroot}/jinx" ro)
         $(bind_mount_cmd "${base_dir}" "${imgroot}/base_dir" "${container_base_dir_ro}")
-        mount --bind '${base_dir}/.jinx-cache/tmp' '${imgroot}/base_dir/.jinx-cache/tmp'
+        mount --bind '${tmp_dir}' '${imgroot}/jinx-tmp'
         mount --bind '${build_dir}' '${imgroot}/build_dir'
         $(bind_mount_cmd "${base_dir}/sources" "${imgroot}/base_dir/sources" "${container_sources_ro}")
         $(bind_mount_cmd "${base_dir}/host-sources" "${imgroot}/base_dir/host-sources" "${container_sources_ro}")
@@ -907,7 +914,7 @@ run_in_container() {
         '
     "
 
-    force_remove "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/build_dir" "${imgroot}/jinx"
+    force_remove "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/build_dir" "${imgroot}/jinx-tmp" "${imgroot}/jinx"
     rm "${imgroot}/etc/resolv.conf"
 }
 
@@ -2324,7 +2331,7 @@ cmd_run_in() {
             done
             printf '\n'
         } >"${cmd_file}"
-        local cmd_file_inner="/base_dir/.jinx-cache/tmp/$(basename "${cmd_file}")"
+        local cmd_file_inner="/jinx-tmp/$(basename "${cmd_file}")"
 
         local container_pkgs=
         local sysroot=
