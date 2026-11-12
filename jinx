@@ -2581,10 +2581,13 @@ cmd_install() {
         local pkgs_to_install="${pkgs_to_install} ${pkg}"
     done
 
-    local files_to_ignore='\.keep
-\.plist
-/INSTALL
-/REMOVE'
+    # The metadata of xbps packages, and the placeholders that keep empty
+    # directories in them, which packages may share.
+    local files_to_ignore='^\./props\.plist$
+^\./files\.plist$
+^\./INSTALL$
+^\./REMOVE$
+/\.keep$'
 
     make_temp
     local all_files="${tmp}"
