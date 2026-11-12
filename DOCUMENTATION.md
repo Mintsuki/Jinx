@@ -543,7 +543,7 @@ The consumer's resulting XBPS filename uses the **source recipe's `version`** co
 
 This works for both normal recipes (in `recipes/`) and host recipes (in `host-recipes/`): in either case, the lookup goes to `recipes/`.
 
-When neither `from_source` nor `from_host_source` is set, a recipe provides its own source information inline - `tarball_url`, `git_url`, `source_dir`, etc., declared directly in the recipe itself.
+When neither `from_source` nor `from_host_source` is set, a recipe provides its own source information inline - `tarball_url`, `git_url`, `source_dir`, etc., declared directly in the recipe itself. The recipe that `from_source` points at must be such a recipe: chains, where it takes its own source through `from_source` or `from_host_source` too, are an error.
 
 Example:
 

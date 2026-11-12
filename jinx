@@ -1390,6 +1390,11 @@ clean_sources() {
 do_source() {
     eval "$(source_source_recipe "$1" "$2")"
 
+    # Only ever called on the recipe that owns a source.
+    if [[ -n ${from_source} ]]; then
+        die "recipe '$1' cannot provide sources to other recipes, as it takes its own through from_source/from_host_source"
+    fi
+
     eval "$(get_real_source_dir)"
 
     local cross_compile=yes
