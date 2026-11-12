@@ -2446,14 +2446,7 @@ cmd_run_in() {
         local cmd_file="${tmp}"
         {
             printf 'exec'
-            local arg
-            for arg in "$@"; do
-                local escaped="$arg"
-                local escaped="${escaped//\\/\\\\}"
-                local escaped="${escaped//\"/\\\"}"
-                local escaped="${escaped//\`/\\\`}"
-                printf ' "%s"' "$escaped"
-            done
+            printf ' %q' "$@"
             printf '\n'
         } >"${cmd_file}"
         local cmd_file_inner="/jinx-tmp/$(basename "${cmd_file}")"
