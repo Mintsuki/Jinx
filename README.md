@@ -27,6 +27,10 @@ An example OS using Jinx is [Gloire](https://codeberg.org/Ironclad/Gloire).
 - procps or equivalent (for `free`)
 - util-linux or equivalent (for `unshare`, `flock` and `mount`)
 
+Busybox counts as an equivalent: Jinx sticks to the commands and options that
+busybox implements too, so that an Alpine Linux host, for example, only needs
+`bash`, `git`, `perl`, and `zstd` on top of its base system.
+
 ### Documentation
 
 Documentation can be found in [DOCUMENTATION.md](DOCUMENTATION.md).
