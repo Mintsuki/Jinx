@@ -1584,17 +1584,23 @@ do_regen() {
             fi
         done
 
+        local diff_status=0
         # The patch must not depend on anyone's Git configuration, including
         # that of a repository the sources are in, which GIT_DIR keeps out.
         GIT_DIR=/nonexistent GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
             git diff --no-index --no-prefix --no-color --no-ext-diff \
-            "$1-clean" "$1-workdir" >"${patch_file}" || true
+            "$1-clean" "$1-workdir" >"${patch_file}" || diff_status=$?
 
         for tree in "$1-clean" "$1-workdir"; do
             if [[ -e ${tree}.jinx-git ]]; then
                 mv "${tree}.jinx-git" "${tree}/.git"
             fi
         done
+
+        # Status 1 only means that the trees differ.
+        if (( diff_status > 1 )); then
+            die "could not generate the working patch of '$1'"
+        fi
 
         local _regen_patches_dir="${base_dir}/${_from_source_dir}/$1/patches"
         if [[ -s "${patch_file}" ]]; then
