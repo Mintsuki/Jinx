@@ -51,13 +51,13 @@ jinx_version="${jinx_major_ver}.${jinx_minor_ver}"
 # publishes one tarball per supported arch, named
 # xbps-static-bin-linux-${uname-m}.tar.gz, each wrapping a top-level directory
 # of the same stem. armel, loongarch64, and mips64el are not covered (no Alpine
-# container image on Docker Hub).
+# container image on Docker Hub), and neither is armv6l, as the Debian armhf
+# image that Jinx would bootstrap there needs ARMv7.
 XBPS_RELEASE_URL_BASE="https://github.com/Mintsuki/xbps-static-builds/releases/download/20260521T170342Z"
 declare -A XBPS_SHA256=(
     [x86_64]=c41de4470f06d3e2d662e4793bd454e9e5e20ab36a3494e12da54101de1db196
     [aarch64]=6aa7e9764d43e497167b4faec53a4f53726bb109b93d9338e25358085053f336
     [armv7l]=0f4c11f1904cb63d9f2ba8d3beb52395ccbe8c895e9961191b90dde793a62fcf
-    [armv6l]=dce0a59b03ad839b21d72dd333321739836608fe006eb9e375efacb36c58af07
     [i686]=f748d96c12a345078e29b6b6eebb8a2641fe2254512e5418a0a4c640ae9437cb
     [ppc64le]=83e1d0a5b8823d3fc436a5d74ba2f358e3dcc5ff271f0696c457779537a4c87a
     [riscv64]=b8855d16114e1af84134ba2eb0e99202746ea38ce6233922e244e2c3a8058d9b
@@ -73,7 +73,6 @@ declare -A NOCHOWN_SHA256=(
     [x86_64]=74330fe145f0e4180e22a9b3ec054c98f854d7a7d9cca034364a12a8d04c576a
     [aarch64]=45aac7c467f33404f6bbddb1a24cdd5bfc66581e63a87d80233f8dedc7e30479
     [armv7l]=3209f70a893ef1c59ceff8c50a8c0ab445266aadab88c47d4648f8e75e10df86
-    [armv6l]=45c04e2f8b1f4db00527620c1fbdabf438880377fc26fd95d6283d270147ef39
     [i686]=c1604dfc56120180f5b097d4ff1d529511a1457ae3aa0e3a28a11a16bb689154
     [ppc64le]=6f55eb63b27f962f9bfe6f338451e854cb6467ed773aae754882f7e0e277f043
     [riscv64]=6780c1878715dc8558ad0553def1457c70c5bf133544c419d1bb41d7c2272d82
