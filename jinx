@@ -104,24 +104,24 @@ fi
 
 # Messages go to standard error, which keeps standard output for what scripts
 # read, such as the package list of 'closure'.
-msg() {
+jinx_msg() {
     printf '%s==>%s %s%s%s\n' "${c_green}" "${c_off}" "${c_bold}" "$*" "${c_off}" >&2
 }
 
-msg2() {
+jinx_msg2() {
     printf '  %s->%s %s%s%s\n' "${c_blue}" "${c_off}" "${c_bold}" "$*" "${c_off}" >&2
 }
 
-warning() {
+jinx_warning() {
     printf '%s==> WARNING:%s %s%s%s\n' "${c_yellow}" "${c_off}" "${c_bold}" "$*" "${c_off}" >&2
 }
 
-error() {
+jinx_error() {
     printf '%s==> ERROR:%s %s%s%s\n' "${c_red}" "${c_off}" "${c_bold}" "$*" "${c_off}" >&2
 }
 
 die() {
-    error "$*"
+    jinx_error "$*"
     exit 1
 }
 
@@ -129,7 +129,7 @@ if [[ -z ${1-} ]]; then
     die "no command specified; see '$0 help'"
 fi
 
-cmd_help() {
+jinx_cmd_help() {
     echo "usage: $0 <command> [args...]"
     printf "\n   help|--help        Displays this message"
     printf "\n   version|--version  Prints the version"
@@ -149,11 +149,11 @@ cmd_help() {
 
 # Single quotes, unlike printf %q, read back the same in any POSIX shell, and
 # .jinx-parameters is meant to be sourced by scripts as well.
-shell_quote() {
+jinx_shell_quote() {
     printf "'%s'" "${1//\'/\'\\\'\'}"
 }
 
-cmd_init() {
+jinx_cmd_init() {
     if [[ -z ${1-} ]]; then
         die "init requires a directory argument"
     fi
@@ -205,15 +205,15 @@ cmd_init() {
 
     {
         printf '#! /bin/sh\n\n'
-        printf 'JINX_INIT_MAJOR_VER=%s\n' "$(shell_quote "${jinx_major_ver}")"
-        printf 'JINX_SOURCE_DIR=%s\n' "$(shell_quote "${srcdir}")"
-        printf 'JINX_ARCH=%s\n' "$(shell_quote "$(uname -m)")"
+        printf 'JINX_INIT_MAJOR_VER=%s\n' "$(jinx_shell_quote "${jinx_major_ver}")"
+        printf 'JINX_SOURCE_DIR=%s\n' "$(jinx_shell_quote "${srcdir}")"
+        printf 'JINX_ARCH=%s\n' "$(jinx_shell_quote "$(uname -m)")"
         for p in "$@"; do
-            printf 'JINX_%s=%s\n' "${p%%=*}" "$(shell_quote "${p#*=}")"
+            printf 'JINX_%s=%s\n' "${p%%=*}" "$(jinx_shell_quote "${p#*=}")"
         done
     } >"${builddir}/.jinx-parameters"
 
-    msg "Initialised '${builddir}' as build directory with '${srcdir}' as source directory"
+    jinx_msg "Initialised '${builddir}' as build directory with '${srcdir}' as source directory"
 }
 
 case "$1" in
@@ -222,12 +222,12 @@ case "$1" in
         exit 0
         ;;
     help|--help)
-        cmd_help
+        jinx_cmd_help
         exit 0
         ;;
     init)
         shift 1
-        cmd_init "$@"
+        jinx_cmd_init "$@"
         exit 0
         ;;
 esac
@@ -277,7 +277,7 @@ case "$1" in
         ;;
 esac
 
-compute_parallelism() {
+jinx_compute_parallelism() {
     if [[ -n ${JINX_PARALLELISM} ]]; then
         echo "${JINX_PARALLELISM}"
         return
@@ -293,7 +293,7 @@ compute_parallelism() {
     echo $(( threads > 0 ? threads : 1 ))
 }
 
-parallelism="$(compute_parallelism)"
+parallelism="$(jinx_compute_parallelism)"
 
 # Architecture tag for host packages. Host recipes build native tools that run
 # on the build machine, so they are keyed on the build host's arch, independent
@@ -366,11 +366,11 @@ apt_cache="$JINX_CACHE_DIR/apt-cache"
 if [[ ${in_container} == false ]]; then
     tmp_dir="${JINX_CACHE_DIR}/tmp"
 else
-    # Where run_in_container mounts the cache's tmp/, wherever the cache is.
+    # jinx_run_in_container mounts the cache's tmp/ here, wherever the cache is.
     tmp_dir=/jinx-tmp
 fi
 
-force_remove() {
+jinx_force_remove() {
     rm -rf "$@" 2>/dev/null && return
     # Only a directory without write or search permission can block deletion,
     # and directories, unlike the files of image sets, are never hard-linked.
@@ -381,34 +381,34 @@ force_remove() {
 temp_collect=()
 
 cleanup_done=no
-cleanup() {
+jinx_cleanup() {
     if [[ ${cleanup_done} == yes ]]; then
         return
     fi
     cleanup_done=yes
     if (( ${#temp_collect[@]} > 0 )); then
-        force_remove "${temp_collect[@]}"
+        jinx_force_remove "${temp_collect[@]}"
     fi
 }
 
-trap 'tmp_ret=$?; set +e; cleanup; trap - EXIT; exit ${tmp_ret}' INT TERM HUP QUIT EXIT
+trap 'tmp_ret=$?; set +e; jinx_cleanup; trap - EXIT; exit ${tmp_ret}' INT TERM HUP QUIT EXIT
 
-make_temp() {
+jinx_make_temp() {
     tmp="$(mktemp ${1-} "${tmp_dir}/tmp.XXXXXXXX")"
     temp_collect+=("${tmp}")
 }
 
-tracked_subshell() {
+jinx_tracked_subshell() {
     (
         temp_collect=()
         cleanup_done=no
-        trap 'tmp_ret=$?; set +e; cleanup; trap - EXIT; exit ${tmp_ret}' INT TERM HUP QUIT EXIT
+        trap 'tmp_ret=$?; set +e; jinx_cleanup; trap - EXIT; exit ${tmp_ret}' INT TERM HUP QUIT EXIT
         set -e
         eval "$1"
     )
 }
 
-include_recipe() {
+jinx_include_recipe() {
     if [[ ! -f $1/recipe ]]; then
         printf 'die %q\n' "recipe file '$1/recipe' not found"
         return 1
@@ -539,36 +539,36 @@ EOF
 # sees the chain of packages being built above it; meeting one of those again
 # is a dependency cycle, which would otherwise recurse forever.
 build_chain=
-enter_build() {
+jinx_enter_build() {
     if [[ " ${build_chain} " == *" $1 "* ]]; then
         die "dependency cycle: ${build_chain# } $1"
     fi
     build_chain="${build_chain} $1"
 }
 
-build_hostdeps() {
+jinx_build_hostdeps() {
     local hostdep
     for hostdep in ${hostdeps} ${hostrundeps}; do
         [[ -f "${base_dir}/host-recipes/${hostdep}/recipe" ]] || die "missing host dependency '${hostdep}' for recipe '${name}'"
 
-        tracked_subshell '
-            do_build_if_needed host-recipes "${hostdep}"
+        jinx_tracked_subshell '
+            jinx_do_build_if_needed host-recipes "${hostdep}"
         '
     done
 }
 
-build_deps() {
+jinx_build_deps() {
     local dep
     for dep in ${deps} ${builddeps}; do
         [[ -f "${base_dir}/recipes/${dep}/recipe" ]] || die "missing dependency '${dep}' for recipe '${name}'"
 
-        tracked_subshell '
-            do_update yes ${dep}
+        jinx_tracked_subshell '
+            jinx_do_update yes ${dep}
         '
     done
 }
 
-get_hostdeps_file() {
+jinx_get_hostdeps_file() {
     local deps_to_do=""
 
     local hostdep
@@ -580,12 +580,12 @@ get_hostdeps_file() {
     done
 
     for hostdep in ${deps_to_do}; do
-        eval "$(include_recipe "${base_dir}"/host-recipes/${hostdep})"
-        get_hostdeps_file
+        eval "$(jinx_include_recipe "${base_dir}"/host-recipes/${hostdep})"
+        jinx_get_hostdeps_file
     done
 }
 
-topo_sort_visit() {
+jinx_topo_sort_visit() {
     # A node still being visited when it is reached again closes a cycle.
     case ${_visited[$1]-} in
         done)
@@ -601,14 +601,14 @@ topo_sort_visit() {
 
     local _dep
     for _dep in ${_graph[$1]}; do
-        [[ -n $_dep ]] && topo_sort_visit "$_dep"
+        [[ -n $_dep ]] && jinx_topo_sort_visit "$_dep"
     done
 
     _visited[$1]=done
     _result="${_result}$1 "
 }
 
-topo_sort() {
+jinx_topo_sort() {
     local -A _graph
     local -A _visited
     local _result=
@@ -622,20 +622,20 @@ topo_sort() {
     done <<<"$1"
 
     for _node in $(printf '%s\n' "${!_graph[@]}" | sort); do
-        topo_sort_visit "$_node"
+        jinx_topo_sort_visit "$_node"
     done
 
     echo "${_result% }"
 }
 
-get_builddeps() {
+jinx_get_builddeps() {
     local pkg="$1"
 
-    eval "$(include_recipe "${base_dir}/recipes/${pkg}")"
+    eval "$(jinx_include_recipe "${base_dir}/recipes/${pkg}")"
 
     local -A _deps_collected
 
-    get_builddeps_file
+    jinx_get_builddeps_file
 
     local graph="${pkg}:${deps} ${builddeps}"
 
@@ -646,10 +646,10 @@ get_builddeps() {
         fi
 
         local graph="${graph}
-${dep}:$(eval "$(recipe_info recipes "${dep}")" && echo ${deps})"
+${dep}:$(eval "$(jinx_recipe_info recipes "${dep}")" && echo ${deps})"
     done
 
-    topo_sort "${graph}"
+    jinx_topo_sort "${graph}"
 }
 
 # Prints the assignments of what most commands look up in recipe $2 from $1
@@ -657,7 +657,7 @@ ${dep}:$(eval "$(recipe_info recipes "${dep}")" && echo ${deps})"
 # uses from_source), revision, dependencies, and source-level dependencies
 # (from its source's recipe too). Evaluating a recipe takes long enough to be
 # worth doing only once per run.
-recipe_info() {
+jinx_recipe_info() {
     local cached="${recipe_info_cache-}/$1/$2"
     if [[ -n ${recipe_info_cache-} && -f ${cached} ]]; then
         cat "${cached}"
@@ -666,10 +666,10 @@ recipe_info() {
 
     local info
     if ! info="$(
-        eval "$(include_recipe "${base_dir}/$1/$2")"
+        eval "$(jinx_include_recipe "${base_dir}/$1/$2")"
         if [[ -n ${from_source} ]]; then
             local src
-            src="$(eval "$(include_recipe "${base_dir}/${_from_source_dir}/${from_source}")" \
+            src="$(eval "$(jinx_include_recipe "${base_dir}/${_from_source_dir}/${from_source}")" \
                 && printf 'version=%q source_deps=%q source_hostdeps=%q\n' \
                     "${version}" "${source_deps}" "${source_hostdeps}")" || exit 1
             eval "${src}"
@@ -693,18 +693,18 @@ recipe_info() {
     printf '%s\n' "${info}"
 }
 
-get_source_deps() {
+jinx_get_source_deps() {
     # Source-level deps of recipe $1 in $2, as '<source_hostdeps>|<source_deps>'.
     # A recipe using from_source/from_host_source borrows them from the recipe
     # owning the source; source_hostdeps always resolve in host-recipes/ and
     # source_deps in recipes/, whichever namespace the source recipe lives in.
     (
-        eval "$(recipe_info "$2" "$1")"
+        eval "$(jinx_recipe_info "$2" "$1")"
         echo "${source_hostdeps}|${source_deps}"
     )
 }
 
-get_builddeps_file() {
+jinx_get_builddeps_file() {
     local deps_to_do=""
 
     local dep
@@ -716,12 +716,12 @@ get_builddeps_file() {
     done
 
     for dep in ${deps_to_do}; do
-        eval "$(include_recipe "${base_dir}"/recipes/${dep})"
-        get_deps_file
+        eval "$(jinx_include_recipe "${base_dir}"/recipes/${dep})"
+        jinx_get_deps_file
     done
 }
 
-get_deps_file() {
+jinx_get_deps_file() {
     local deps_to_do=""
 
     local dep
@@ -733,18 +733,18 @@ get_deps_file() {
     done
 
     for dep in ${deps_to_do}; do
-        eval "$(include_recipe "${base_dir}"/recipes/${dep})"
-        get_deps_file
+        eval "$(jinx_include_recipe "${base_dir}"/recipes/${dep})"
+        jinx_get_deps_file
     done
 }
 
 # Runs the command $2... with its output held back, which only gets shown, after
 # the error message $1, if the command fails.
-run_quietly() {
-    make_temp
+jinx_run_quietly() {
+    jinx_make_temp
     local log="${tmp}"
     if ! "${@:2}" >"${log}" 2>&1; then
-        error "$1"
+        jinx_error "$1"
         sed 's/^/    /' "${log}" >&2
         return 1
     fi
@@ -752,7 +752,7 @@ run_quietly() {
 
 # The commands that mount the file systems that every container needs onto
 # root $1.
-container_mounts_cmd() {
+jinx_container_mounts_cmd() {
     printf "mount --rbind --make-rslave /dev '%s/dev'\n" "$1"
     printf "mount -t proc proc '%s/proc'\n" "$1"
     printf "mount --rbind --make-rslave /sys '%s/sys'\n" "$1"
@@ -761,7 +761,7 @@ container_mounts_cmd() {
     printf "mount -t tmpfs tmpfs '%s/var/tmp'\n" "$1"
 }
 
-run_in_container1() {
+jinx_run_in_container1() {
     local run_in_cont1_root="$1"
     shift 1
 
@@ -771,7 +771,7 @@ run_in_container1() {
     unshare --user --map-root-user --mount --pid --fork -- "$BASH" -c "
         set -e
 
-        $(container_mounts_cmd "${run_in_cont1_root}")
+        $(jinx_container_mounts_cmd "${run_in_cont1_root}")
 
         mount --bind '${apt_cache}' '${run_in_cont1_root}/var/cache/apt/archives'
 
@@ -793,30 +793,30 @@ run_in_container1() {
     rm "${run_in_cont1_root}/etc/resolv.conf"
 }
 
-prepare_container() {
+jinx_prepare_container() {
     cd "${build_dir}"
 
     local -A _hostdeps_collected
     local -A _deps_collected
 
-    build_hostdeps
-    build_deps
+    jinx_build_hostdeps
+    jinx_build_deps
 
-    get_hostdeps_file
-    get_builddeps_file
+    jinx_get_hostdeps_file
+    jinx_get_builddeps_file
 
     local _bpd_of _bpd
     for _bpd_of in "${!_deps_collected[@]}"; do
-        for _bpd in $(eval "$(recipe_info recipes "${_bpd_of}")" && echo "${binpkgdeps}"); do
+        for _bpd in $(eval "$(jinx_recipe_info recipes "${_bpd_of}")" && echo "${binpkgdeps}"); do
             [[ -n ${_deps_collected[$_bpd]+x} ]] && continue
             [[ ${_bpd} == "${name}" ]] && continue
-            tracked_subshell '
-                do_build_if_needed recipes "${_bpd}"
+            jinx_tracked_subshell '
+                jinx_do_build_if_needed recipes "${_bpd}"
             '
         done
     done
 
-    make_temp -d
+    jinx_make_temp -d
     sysroot="${tmp}"
 
     # One at a time: a bootstrap package and the package that it stands in for
@@ -826,7 +826,7 @@ prepare_container() {
     for dep in "${!_deps_collected[@]}"; do
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${JINX_ARCH}" \
-            run_quietly "failed to install '${dep}' into the sysroot:" \
+            jinx_run_quietly "failed to install '${dep}' into the sysroot:" \
                 xbps-install -y -r "${sysroot}" -R "${build_dir}"/pkgs "${dep}" \
             || exit 17
     done
@@ -837,13 +837,13 @@ prepare_container() {
         # works with whatever C library the sysroot has.
         cp "${JINX_CACHE_DIR}/sets/.image/nochown.so" "${sysroot}/nochown.so"
     else
-        make_temp -d
+        jinx_make_temp -d
         local host_root="${tmp}"
         local hostdep
         for hostdep in "${!_hostdeps_collected[@]}"; do
             XBPS_ARCH=invalid \
             XBPS_TARGET_ARCH="${host_arch}" \
-                run_quietly "failed to install host package '${hostdep}':" \
+                jinx_run_quietly "failed to install host package '${hostdep}':" \
                     xbps-install -y -r "${host_root}" -R "${build_dir}"/host-pkgs "${hostdep}" \
                 || exit 17
         done
@@ -862,7 +862,7 @@ prepare_container() {
                 ;;
         esac
         for hostdep in "${!_hostdeps_collected[@]}"; do
-            for _imagerundep in $(eval "$(recipe_info host-recipes "${hostdep}")" && echo "${imagerundeps}"); do
+            for _imagerundep in $(eval "$(jinx_recipe_info host-recipes "${hostdep}")" && echo "${imagerundeps}"); do
                 imagedeps="${imagedeps} ${_imagerundep}"
             done
         done
@@ -878,14 +878,14 @@ prepare_container() {
                 continue
             fi
 
-            force_remove "$JINX_CACHE_DIR/sets/${pkgset}"
+            jinx_force_remove "$JINX_CACHE_DIR/sets/${pkgset}"
             mkdir -p "$JINX_CACHE_DIR/sets/${pkgset}"
 
             cp -Pplrf "$JINX_CACHE_DIR/sets/${pkgset}../.image" "$JINX_CACHE_DIR/sets/${pkgset}.image"
 
             rm -f "$JINX_CACHE_DIR/sets/${pkgset}.image/.jinx-set-valid"
 
-            run_in_container1 "$JINX_CACHE_DIR/sets/${pkgset}.image" apt-get install -y "${pkg}"
+            jinx_run_in_container1 "$JINX_CACHE_DIR/sets/${pkgset}.image" apt-get install -y "${pkg}"
 
             # Fix permissions of files
             find "$JINX_CACHE_DIR/sets/${pkgset}.image" -perm 000 -exec chmod 755 {} + 2>/dev/null
@@ -900,14 +900,14 @@ prepare_container() {
 # The commands that bind-mount $1 onto $2, read-only if $3 is non-empty. The
 # separate remount is what makes it read-only: busybox's mount ignores ro when
 # it creates a bind mount.
-bind_mount_cmd() {
+jinx_bind_mount_cmd() {
     printf "mount --bind '%s' '%s'\n" "$1" "$2"
     if [[ -n ${3-} ]]; then
         printf "mount -o remount,bind,ro '%s'\n" "$2"
     fi
 }
 
-run_in_container() {
+jinx_run_in_container() {
     local lo_up=
     if [[ ${allow_network} == yes ]]; then
         local unshare_net_flag=""
@@ -951,9 +951,9 @@ run_in_container() {
         mkdir -p "${imgroot}/sysroot"
 
         local container_pkgs_native_mount
-        container_pkgs_native_mount="$(bind_mount_cmd "${container_pkgs}" "${imgroot}/usr/local" ro)"
+        container_pkgs_native_mount="$(jinx_bind_mount_cmd "${container_pkgs}" "${imgroot}/usr/local" ro)"
         local sysroot_native_mount
-        sysroot_native_mount="$(bind_mount_cmd "${sysroot}" "${imgroot}/sysroot" ro)"
+        sysroot_native_mount="$(jinx_bind_mount_cmd "${sysroot}" "${imgroot}/sysroot" ro)"
 
         local run_in_cont_lang=en_US.UTF-8
     else
@@ -966,13 +966,13 @@ run_in_container() {
 
     local shadow_git_dir_build=""
     if [[ -d "${build_dir}/.git" ]]; then
-        make_temp -d
+        jinx_make_temp -d
         local shadow_git_dir_build="mount --bind '${tmp}' '${imgroot}/build_dir/.git'"
     fi
 
     local shadow_git_dir_base=""
     if [[ -d "${base_dir}/.git" ]]; then
-        make_temp -d
+        jinx_make_temp -d
         local shadow_git_dir_base="mount --bind '${tmp}' '${imgroot}/base_dir/.git'"
     fi
 
@@ -980,24 +980,24 @@ run_in_container() {
 
     # Recomputed per step so the memory cap tracks the RAM free right now.
     local parallelism
-    parallelism="$(compute_parallelism)"
+    parallelism="$(jinx_compute_parallelism)"
 
     unshare --user --map-root-user --mount --pid --fork ${unshare_net_flag} -- "$BASH" -c "
         set -e
 
         ${lo_up}
 
-        $(bind_mount_cmd "${imgroot}" "${imgroot}" ro)
+        $(jinx_bind_mount_cmd "${imgroot}" "${imgroot}" ro)
 
-        $(container_mounts_cmd "${imgroot}")
+        $(jinx_container_mounts_cmd "${imgroot}")
 
-        $(bind_mount_cmd "${script}" "${imgroot}/jinx" ro)
-        $(bind_mount_cmd "${base_dir}" "${imgroot}/base_dir" "${container_base_dir_ro}")
+        $(jinx_bind_mount_cmd "${script}" "${imgroot}/jinx" ro)
+        $(jinx_bind_mount_cmd "${base_dir}" "${imgroot}/base_dir" "${container_base_dir_ro}")
         mount --bind '${tmp_dir}' '${imgroot}/jinx-tmp'
         mount --bind '${JINX_CACHE_DIR}/distfiles' '${imgroot}/jinx-distfiles'
         mount --bind '${build_dir}' '${imgroot}/build_dir'
-        $(bind_mount_cmd "${base_dir}/sources" "${imgroot}/base_dir/sources" "${container_sources_ro}")
-        $(bind_mount_cmd "${base_dir}/host-sources" "${imgroot}/base_dir/host-sources" "${container_sources_ro}")
+        $(jinx_bind_mount_cmd "${base_dir}/sources" "${imgroot}/base_dir/sources" "${container_sources_ro}")
+        $(jinx_bind_mount_cmd "${base_dir}/host-sources" "${imgroot}/base_dir/host-sources" "${container_sources_ro}")
         ${container_pkgs_native_mount}
         ${sysroot_native_mount}
         ${shadow_git_dir_base}
@@ -1025,16 +1025,16 @@ run_in_container() {
         '
     "
 
-    force_remove "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/build_dir" "${imgroot}/jinx-tmp" "${imgroot}/jinx-distfiles" "${imgroot}/jinx"
+    jinx_force_remove "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/build_dir" "${imgroot}/jinx-tmp" "${imgroot}/jinx-distfiles" "${imgroot}/jinx"
     rm "${imgroot}/etc/resolv.conf"
 }
 
-destroy_container() {
+jinx_destroy_container() {
     # Native builds have no separate host packages.
-    force_remove ${container_pkgs:+"${container_pkgs}"} "${sysroot}"
+    jinx_force_remove ${container_pkgs:+"${container_pkgs}"} "${sysroot}"
 }
 
-do_git_fetch() {
+jinx_do_git_fetch() {
     # $1: clone destination (default: the recipe's sources/ slot).
     # $2: "full" forces a full clone regardless of the shallow property.
     local _dest="${1:-${base_dir}/${_sources_root}/${name}}"
@@ -1056,7 +1056,7 @@ do_git_fetch() {
     fi
 }
 
-do_tarball_fetch() {
+jinx_do_tarball_fetch() {
     # Downloaded archives stay in the cache, named after the first checksum
     # that the recipe sets, so that a source fetched again needs no download.
     local algo var cache_algo= cache_sum=
@@ -1081,12 +1081,12 @@ do_tarball_fetch() {
         curl -f -L -o "${tarball_path}" "${tarball_url}"
     fi
 
-    fill_recipe_checksum() {
+    jinx_fill_recipe_checksum() {
         local var_name="$1"
         local checksum_value="$2"
         if [[ -n ${current_recipe_file} && -f ${current_recipe_file} ]]; then
-            print_checksum_value() { echo "${checksum_value}"; }
-            rewrite_recipe_assignment "${current_recipe_file}" "${var_name}" '[?]' print_checksum_value
+            jinx_print_checksum_value() { echo "${checksum_value}"; }
+            jinx_rewrite_recipe_assignment "${current_recipe_file}" "${var_name}" '[?]' jinx_print_checksum_value
             # Left as it is, the '?' would let every later fetch through
             # unverified.
             if (( matched_lines == 0 )); then
@@ -1114,7 +1114,7 @@ do_tarball_fetch() {
         actual="${actual%% *}"
         if [[ ${actual} != "${expected}" ]]; then
             if [[ ${expected} == "?" ]]; then
-                fill_recipe_checksum "${_checksum_prefix}_${algo}" "${actual}"
+                jinx_fill_recipe_checksum "${_checksum_prefix}_${algo}" "${actual}"
             else
                 # Not kept, so that a damaged archive in the cache gets
                 # downloaded again.
@@ -1134,7 +1134,7 @@ do_tarball_fetch() {
         tarball_path="${cached}"
     fi
 
-    make_temp -d
+    jinx_make_temp -d
     local extract_dir="${tmp}"
 
     if [[ ${_archive_format} == zip ]]; then
@@ -1163,10 +1163,10 @@ do_tarball_fetch() {
         fi
     fi
 
-    force_remove "${extract_dir}"
+    jinx_force_remove "${extract_dir}"
 }
 
-get_real_source_dir() {
+jinx_get_real_source_dir() {
     if [[ -z ${source_dir} && -z ${git_url} && -z ${tarball_url} ]]; then
         cat <<'EOF'
 local source_dir=/dev/null
@@ -1200,7 +1200,7 @@ EOF
     fi
 }
 
-source_source_recipe() {
+jinx_source_source_recipe() {
     local name="$1"
     local dir="$2"
     local _path="${base_dir}/${dir}/${name}"
@@ -1209,7 +1209,7 @@ source_source_recipe() {
         return 1
     fi
     printf 'local current_recipe_file=%q\n' "${_path}/recipe"
-    include_recipe "${_path}"
+    jinx_include_recipe "${_path}"
 
     cat <<'EOF'
 local imagedeps="${source_imagedeps}"
@@ -1223,10 +1223,10 @@ local binpkgdeps=
 EOF
 }
 
-do_fetch() {
-    eval "$(source_source_recipe "$1" "$2")"
+jinx_do_fetch() {
+    eval "$(jinx_source_source_recipe "$1" "$2")"
 
-    eval "$(get_real_source_dir)"
+    eval "$(jinx_get_real_source_dir)"
 
     local sysroot=/sysroot
 
@@ -1235,17 +1235,17 @@ do_fetch() {
         # once and then used in place. An existing tree is never re-cloned (remove
         # it to start fresh); plain local and sourceless packages have no git_url.
         if [[ -n ${git_url} && ! -d ${source_dir} ]]; then
-            do_git_fetch "${source_dir}" full
+            jinx_do_git_fetch "${source_dir}" full
         fi
     else
         if [[ -n ${git_url} ]]; then
-            do_git_fetch
+            jinx_do_git_fetch
         elif [[ -n ${tarball_url} ]]; then
-            do_tarball_fetch
+            jinx_do_tarball_fetch
         fi
     fi
 
-    tracked_subshell '
+    jinx_tracked_subshell '
         cd "${source_dir}"
         early_prepare
     '
@@ -1254,8 +1254,8 @@ do_fetch() {
 # Patched files get their old modification times back, or they would look newer
 # than what was generated from them (such as configure from configure.ac), and
 # the build would try to generate it again.
-apply_patch() {
-    make_temp -d
+jinx_apply_patch() {
+    jinx_make_temp -d
     local scratch="${tmp}"
 
     local -a files=()
@@ -1279,10 +1279,10 @@ apply_patch() {
     done
 }
 
-do_patch() {
-    eval "$(source_source_recipe "$1" "$2")"
+jinx_do_patch() {
+    eval "$(jinx_source_source_recipe "$1" "$2")"
 
-    eval "$(get_real_source_dir)"
+    eval "$(jinx_get_real_source_dir)"
 
     cd "${source_dir}"
 
@@ -1290,27 +1290,27 @@ do_patch() {
     local patch
     for patch in "${_patches_dir}"/*; do
         if [[ -f ${patch} && ${patch##*/} != jinx-working-patch.patch ]]; then
-            apply_patch "${patch}"
+            jinx_apply_patch "${patch}"
         fi
     done
 
-    force_remove "${base_dir}/${_sources_root}/${name}-clean"
+    jinx_force_remove "${base_dir}/${_sources_root}/${name}-clean"
     cp -rp "${source_dir}" "${base_dir}/${_sources_root}/${name}-clean"
 
     if [[ -f ${_patches_dir}/jinx-working-patch.patch ]]; then
-        apply_patch "${_patches_dir}/jinx-working-patch.patch"
+        jinx_apply_patch "${_patches_dir}/jinx-working-patch.patch"
     fi
 
-    force_remove "${base_dir}/${_sources_root}/${name}-workdir"
+    jinx_force_remove "${base_dir}/${_sources_root}/${name}-workdir"
     cp -rp "${source_dir}" "${base_dir}/${_sources_root}/${name}-workdir"
 
     cd "${base_dir}"
 }
 
-do_prepare() {
-    eval "$(source_source_recipe "$1" "$2")"
+jinx_do_prepare() {
+    eval "$(jinx_source_source_recipe "$1" "$2")"
 
-    eval "$(get_real_source_dir)"
+    eval "$(jinx_get_real_source_dir)"
 
     local sysroot=/sysroot
 
@@ -1321,16 +1321,16 @@ do_prepare() {
 
 # Runs stage $2 (configure, build, package, or run-in) of recipe $3 from $1
 # (recipes or host-recipes). For run-in, $4 is the file of the command to run.
-do_stage() {
+jinx_do_stage() {
     local _kind="${1%recipes}" _stage="$2" _cmd_file="${4-}"
-    eval "$(include_recipe "${base_dir}/$1/$3")"
+    eval "$(jinx_include_recipe "${base_dir}/$1/$3")"
 
     if [[ -n ${from_source} || -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ]]; then
         if [[ -n ${from_source} ]]; then
             local version
-            version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+            version=$(eval "$(jinx_source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
             local source_dir
-            source_dir="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
+            source_dir="$(eval "$(jinx_source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
         else
             local from_source=${name}
         fi
@@ -1350,7 +1350,7 @@ do_stage() {
 
     if [[ ${_stage} == package ]]; then
         local dest_dir="${build_dir}/${_kind}pkgs/${name}"
-        force_remove "${dest_dir}"
+        jinx_force_remove "${dest_dir}"
         mkdir -p "${dest_dir}${prefix}"
     fi
 
@@ -1379,7 +1379,7 @@ do_stage() {
     cd "${base_dir}"
 }
 
-source_is_pinned() {
+jinx_source_is_pinned() {
     # Does any recipe sharing source $1 (rooted at $2) keep its build directory?
     # Such a directory was configured out of tree and still names the source as
     # srcdir, so reaping it would leave the tree unusable. Only a recipe assigning
@@ -1392,7 +1392,7 @@ source_is_pinned() {
         [[ -f ${_rec} ]] && grep -q 'clean_workdirs' "${_rec}" || continue
 
         _id=$(
-            eval "$(include_recipe "${_rec%/recipe}")"
+            eval "$(jinx_include_recipe "${_rec%/recipe}")"
             [[ ${clean_workdirs} == no ]] || exit 0
             echo "${_sources_root}/${from_source:-${name}}"
         )
@@ -1405,25 +1405,25 @@ source_is_pinned() {
     return 1
 }
 
-clean_sources() {
-    force_remove "${base_dir}"/${_sources_root}/$1
-    force_remove "${base_dir}"/${_sources_root}/$1-clean
-    force_remove "${base_dir}"/${_sources_root}/$1-workdir
-    force_remove "${base_dir}"/${_sources_root}/$1.version
-    force_remove "${base_dir}"/${_sources_root}/$1.patched
-    force_remove "${base_dir}"/${_sources_root}/$1.prepared
-    force_remove "${base_dir}"/${_sources_root}/$1.revision
+jinx_clean_sources() {
+    jinx_force_remove "${base_dir}"/${_sources_root}/$1
+    jinx_force_remove "${base_dir}"/${_sources_root}/$1-clean
+    jinx_force_remove "${base_dir}"/${_sources_root}/$1-workdir
+    jinx_force_remove "${base_dir}"/${_sources_root}/$1.version
+    jinx_force_remove "${base_dir}"/${_sources_root}/$1.patched
+    jinx_force_remove "${base_dir}"/${_sources_root}/$1.prepared
+    jinx_force_remove "${base_dir}"/${_sources_root}/$1.revision
 }
 
-do_source() {
-    eval "$(source_source_recipe "$1" "$2")"
+jinx_do_source() {
+    eval "$(jinx_source_source_recipe "$1" "$2")"
 
     # Only ever called on the recipe that owns a source.
     if [[ -n ${from_source} ]]; then
         die "recipe '$1' cannot provide sources to other recipes, as it takes its own through from_source/from_host_source"
     fi
 
-    eval "$(get_real_source_dir)"
+    eval "$(jinx_get_real_source_dir)"
 
     # Nothing to fetch, patch, or prepare.
     if [[ ${is_sourceless_package} == true ]]; then
@@ -1458,40 +1458,40 @@ do_source() {
     local imgroot=
     local container_sources_ro=
     local container_base_dir_ro=
-    prepare_container
+    jinx_prepare_container
 
     if [[ ${_need_fetch} == yes ]]; then
         if [[ ${is_local_package} != true ]]; then
-            msg2 "Fetching the source of $1"
+            jinx_msg2 "Fetching the source of $1"
         elif [[ -n ${git_url} && ! -d ${source_dir} ]]; then
-            msg2 "Cloning the source of $1"
+            jinx_msg2 "Cloning the source of $1"
         fi
-        tracked_subshell '
+        jinx_tracked_subshell '
             local allow_network=yes
             local container_base_dir_ro=
-            clean_sources '$1'
+            jinx_clean_sources '$1'
             [[ ${is_local_package} == true ]] \
                 || [[ -n ${tarball_sha256} && ${tarball_sha256} == "?" ]] \
                 || [[ -n ${tarball_sha512} && ${tarball_sha512} == "?" ]] \
                 || [[ -n ${tarball_blake2b} && ${tarball_blake2b} == "?" ]] \
                 || local container_base_dir_ro=yes
-            run_in_container internal-fetch '$1' '$2'
+            jinx_run_in_container internal-fetch '$1' '$2'
             echo "${version}" >"${base_dir}"/${_sources_root}/'$1'.version
         '
     fi
 
     if [[ ! -f "${base_dir}/${_sources_root}/$1.patched" ]]; then
         if [[ ${is_local_package} != true && -d ${recipe_dir}/patches ]]; then
-            msg2 "Applying patches to $1"
+            jinx_msg2 "Applying patches to $1"
         fi
-        tracked_subshell '
+        jinx_tracked_subshell '
             if [[ ${is_local_package} != true ]]; then
                 # Patches cannot be applied twice, so a tree that they failed
                 # to apply to all the way has to be fetched again.
                 rm -f "${base_dir}"/${_sources_root}/'$1'.version
                 local allow_network=no
                 local container_base_dir_ro=yes
-                run_in_container internal-patch '$1' '$2'
+                jinx_run_in_container internal-patch '$1' '$2'
                 echo "${version}" >"${base_dir}"/${_sources_root}/'$1'.version
             fi
             touch "${base_dir}"/${_sources_root}/'$1'.patched
@@ -1499,29 +1499,29 @@ do_source() {
     fi
 
     if [[ ! -f "${base_dir}/${_sources_root}/$1.prepared" ]]; then
-        msg2 "Running prepare() for $1"
-        tracked_subshell '
+        jinx_msg2 "Running prepare() for $1"
+        jinx_tracked_subshell '
             local container_base_dir_ro=
             [[ ${is_local_package} == true ]] || local container_base_dir_ro=yes
-            run_in_container internal-prepare '$1' '$2'
+            jinx_run_in_container internal-prepare '$1' '$2'
             touch "${base_dir}"/${_sources_root}/'$1'.prepared
         '
     fi
 
     echo "${revision}" >"${base_dir}/${_sources_root}/$1.revision"
 
-    destroy_container
+    jinx_destroy_container
 }
 
 # Builds the package of recipe $2 from $1 (recipes or host-recipes) anew.
-do_rebuild() {
-    force_remove "${build_dir}/${1%recipes}builds/$2" "${build_dir}/${1%recipes}builds/$2.configured"
+jinx_do_rebuild() {
+    jinx_force_remove "${build_dir}/${1%recipes}builds/$2" "${build_dir}/${1%recipes}builds/$2.configured"
 
-    do_pkg "$1" "$2"
+    jinx_do_pkg "$1" "$2"
 }
 
-do_regen() {
-    eval "$(source_source_recipe "$1" "$2")"
+jinx_do_regen() {
+    eval "$(jinx_source_source_recipe "$1" "$2")"
 
     if [[ -n ${from_source} ]]; then
         if [[ ${_from_source_dir} == host-recipes ]]; then
@@ -1530,14 +1530,14 @@ do_regen() {
             die "recipe '$1' uses from_source/from_host_source; regen its source with: $0 regen ${from_source}"
         fi
     fi
-    eval "$(get_real_source_dir)"
+    eval "$(jinx_get_real_source_dir)"
 
     if [[ ${is_sourceless_package} == true ]]; then
         die "recipe '$1' has no source to regenerate"
     fi
     [[ -f "${base_dir}/${_sources_root}/$1.patched" ]] || die "cannot regenerate non-built package"
 
-    make_temp
+    jinx_make_temp
     local patch_file="${tmp}"
 
     if [[ ${is_local_package} != true ]]; then
@@ -1549,7 +1549,7 @@ do_regen() {
         local tree
         for tree in "$1-clean" "$1-workdir"; do
             if [[ -e ${tree}/.git ]]; then
-                force_remove "${tree}.jinx-git"
+                jinx_force_remove "${tree}.jinx-git"
                 mv "${tree}/.git" "${tree}.jinx-git"
             fi
         done
@@ -1584,11 +1584,11 @@ do_regen() {
 
         cd "${base_dir}"
 
-        force_remove "${source_dir}"
+        jinx_force_remove "${source_dir}"
         cp -rp "${base_dir}"/${_sources_root}/$1-workdir "${source_dir}"
     fi
 
-    force_remove "${base_dir}"/${_sources_root}/$1.prepared
+    jinx_force_remove "${base_dir}"/${_sources_root}/$1.prepared
 
     local cross_compile=yes
     local container_pkgs=
@@ -1596,17 +1596,17 @@ do_regen() {
     local imgroot=
     local container_sources_ro=
     local container_base_dir_ro=
-    prepare_container
-    run_in_container internal-prepare "$1" "$2"
-    destroy_container
+    jinx_prepare_container
+    jinx_run_in_container internal-prepare "$1" "$2"
+    jinx_destroy_container
 
     touch "${base_dir}"/${_sources_root}/$1.prepared
 }
 
 # Prints the path of the package that recipe $2 from $1 (recipes or
 # host-recipes) builds.
-pkg_file() {
-    eval "$(recipe_info "$1" "$2")"
+jinx_pkg_file() {
+    eval "$(jinx_recipe_info "$1" "$2")"
     if [[ $1 == host-recipes ]]; then
         echo "${build_dir}/host-pkgs/$2-${version}_${revision}.${host_arch}.xbps"
     else
@@ -1615,22 +1615,22 @@ pkg_file() {
 }
 
 # Builds the package of recipe $2 from $1 (recipes or host-recipes).
-do_pkg() {
+jinx_do_pkg() {
     local _recipes_dir="$1"
     local _kind="${1%recipes}"
     local _id="$2"
     if [[ -n ${_kind} ]]; then
         _id="host:$2"
     fi
-    enter_build "${_id}"
-    eval "$(include_recipe "${base_dir}/${_recipes_dir}/$2")"
+    jinx_enter_build "${_id}"
+    eval "$(jinx_include_recipe "${base_dir}/${_recipes_dir}/$2")"
 
     if [[ -n ${from_source} ]]; then
         local version
-        version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+        version=$(eval "$(jinx_source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
     fi
 
-    msg "Building ${_id} ${version}_${revision}"
+    jinx_msg "Building ${_id} ${version}_${revision}"
 
     local _arch="${JINX_ARCH}"
     if [[ -n ${_kind} ]]; then
@@ -1638,7 +1638,7 @@ do_pkg() {
     fi
 
     local _pkg
-    _pkg="$(pkg_file "${_recipes_dir}" "${name}")"
+    _pkg="$(jinx_pkg_file "${_recipes_dir}" "${name}")"
 
     # A build directory that configure() finished setting up for this version
     # and revision is kept, so that a build that failed later on resumes where
@@ -1649,13 +1649,13 @@ do_pkg() {
           && $(cat "${_builds}.configured") == "${version}_${revision}" ]]; then
         _configured=yes
     else
-        force_remove "${_builds}" "${_builds}.configured"
+        jinx_force_remove "${_builds}" "${_builds}.configured"
     fi
 
     if [[ -n ${from_source} ]]; then
-        tracked_subshell 'do_source "${from_source}" "${_from_source_dir}"'
+        jinx_tracked_subshell 'jinx_do_source "${from_source}" "${_from_source_dir}"'
     else
-        tracked_subshell 'do_source "${name}" "${_recipes_dir}"'
+        jinx_tracked_subshell 'jinx_do_source "${name}" "${_recipes_dir}"'
     fi
 
     if [[ -n ${_kind} ]]; then
@@ -1665,21 +1665,21 @@ do_pkg() {
     local sysroot=
     local imgroot=
     local container_base_dir_ro=
-    prepare_container
+    jinx_prepare_container
 
     local container_sources_ro=yes
     if [[ ${_configured} == no ]]; then
-        msg2 "Running configure()"
-        run_in_container internal-stage "${_recipes_dir}" configure "${name}"
+        jinx_msg2 "Running configure()"
+        jinx_run_in_container internal-stage "${_recipes_dir}" configure "${name}"
         echo "${version}_${revision}" >"${_builds}.configured"
     fi
-    msg2 "Running build()"
-    run_in_container internal-stage "${_recipes_dir}" build "${name}"
-    force_remove "${build_dir}/${_kind}pkgs/${name}"
-    msg2 "Running package()"
-    run_in_container internal-stage "${_recipes_dir}" package "${name}"
+    jinx_msg2 "Running build()"
+    jinx_run_in_container internal-stage "${_recipes_dir}" build "${name}"
+    jinx_force_remove "${build_dir}/${_kind}pkgs/${name}"
+    jinx_msg2 "Running package()"
+    jinx_run_in_container internal-stage "${_recipes_dir}" package "${name}"
 
-    destroy_container
+    jinx_destroy_container
 
     local xbps_deps=""
     if [[ -n ${_kind} ]]; then
@@ -1690,7 +1690,7 @@ do_pkg() {
     else
         local dep _dep_bootstrap
         for dep in ${deps}; do
-            _dep_bootstrap=$(eval "$(recipe_info recipes "${dep}")" && echo "${bootstrap_pkg}")
+            _dep_bootstrap=$(eval "$(jinx_recipe_info recipes "${dep}")" && echo "${bootstrap_pkg}")
             if [[ ${_dep_bootstrap} == yes ]]; then
                 continue
             fi
@@ -1710,7 +1710,7 @@ do_pkg() {
                 fi
             done
 
-            _dep_bootstrap=$(eval "$(recipe_info recipes "${binpkgdep}")" && echo "${bootstrap_pkg}")
+            _dep_bootstrap=$(eval "$(jinx_recipe_info recipes "${binpkgdep}")" && echo "${bootstrap_pkg}")
             if [[ ${_dep_bootstrap} == yes ]]; then
                 continue
             fi
@@ -1721,7 +1721,7 @@ do_pkg() {
 
     local dest_dir="${build_dir}/${_kind}pkgs/${name}"
 
-    msg2 "Creating the package"
+    jinx_msg2 "Creating the package"
     cd "${build_dir}/${_kind}pkgs"
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${_arch}" \
@@ -1733,7 +1733,7 @@ do_pkg() {
         -F "${conf_files}" \
         "${dest_dir}"
 
-    force_remove "${dest_dir}"
+    jinx_force_remove "${dest_dir}"
 
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${_arch}" \
@@ -1741,11 +1741,11 @@ do_pkg() {
         -a "${_pkg}" \
         -f
 
-    remove_superseded_pkgs "${name}" "${build_dir}/${_kind}pkgs" "${_arch}" "${_pkg}"
+    jinx_remove_superseded_pkgs "${name}" "${build_dir}/${_kind}pkgs" "${_arch}" "${_pkg}"
 
     if [[ ${JINX_CLEAN_WORKDIRS} == yes ]]; then
         if [[ ${clean_workdirs} != no ]]; then
-            force_remove "${_builds}" "${_builds}.configured"
+            jinx_force_remove "${_builds}" "${_builds}.configured"
 
             # A shared tree goes too, whichever of its users built last; the
             # next one to need it fetches it again.
@@ -1754,13 +1754,13 @@ do_pkg() {
                 _src_name="${from_source}"
                 _src_recipes_dir="${_from_source_dir}"
             fi
-            eval "$(source_source_recipe "${_src_name}" "${_src_recipes_dir}")"
+            eval "$(jinx_source_source_recipe "${_src_name}" "${_src_recipes_dir}")"
 
-            eval "$(get_real_source_dir)"
+            eval "$(jinx_get_real_source_dir)"
 
             if [[ ${is_sourceless_package} != true && ${is_local_package} != true ]] \
-               && ! source_is_pinned "${_src_name}" "${_sources_root}"; then
-                clean_sources "${_src_name}"
+               && ! jinx_source_is_pinned "${_src_name}" "${_sources_root}"; then
+                jinx_clean_sources "${_src_name}"
             fi
         fi
     fi
@@ -1769,7 +1769,7 @@ do_pkg() {
 # Prints the recipes that the names and globs given match, each once and in
 # order, host ones as 'host:<name>' as on the command line. A glob passes over
 # entries that are not recipes; an argument matching none is an error.
-expand_recipes() {
+jinx_expand_recipes() {
     local -A seen=()
     local arg ns glob prefix entry
     for arg in "$@"; do
@@ -1802,10 +1802,10 @@ expand_recipes() {
     done
 }
 
-# Builds the recipes $2... (as expand_recipes prints them), after whatever
+# Builds the recipes $2... (as jinx_expand_recipes prints them), after whatever
 # they need that is missing, in build order; if $1 is yes, they themselves get
 # built anew.
-build_with_closure() {
+jinx_build_with_closure() {
     local anew="$1"
     shift 1
 
@@ -1816,39 +1816,39 @@ build_with_closure() {
     done
 
     local order dir
-    order="$(closure_of no "$@")"
+    order="$(jinx_closure_of no "$@")"
     for pkg in ${order}; do
         dir=recipes
         if [[ ${pkg} == host:* ]]; then
             dir=host-recipes
         fi
         if [[ -z ${wanted[${pkg}]+x} ]]; then
-            do_build_if_needed "${dir}" "${pkg#host:}"
+            jinx_do_build_if_needed "${dir}" "${pkg#host:}"
         elif [[ ${anew} == yes ]]; then
-            tracked_subshell 'do_rebuild "${dir}" "${pkg#host:}"'
+            jinx_tracked_subshell 'jinx_do_rebuild "${dir}" "${pkg#host:}"'
         else
-            tracked_subshell 'do_pkg "${dir}" "${pkg#host:}"'
+            jinx_tracked_subshell 'jinx_do_pkg "${dir}" "${pkg#host:}"'
         fi
     done
 }
 
-cmd_build() {
+jinx_cmd_build() {
     if [[ -z ${1-} ]]; then
         die "build requires at least one package name"
     fi
 
     local pkgs
-    pkgs="$(expand_recipes "$@")"
-    build_with_closure no ${pkgs}
+    pkgs="$(jinx_expand_recipes "$@")"
+    jinx_build_with_closure no ${pkgs}
 }
 
 # Builds the package of recipe $2 from $1 (recipes or host-recipes) if it is
 # missing.
-do_build_if_needed() {
+jinx_do_build_if_needed() {
     local pkg
-    pkg="$(pkg_file "$1" "$2")"
+    pkg="$(jinx_pkg_file "$1" "$2")"
     if [[ ! -f ${pkg} ]]; then
-        tracked_subshell 'do_pkg "'$1'" "'$2'"'
+        jinx_tracked_subshell 'jinx_do_pkg "'$1'" "'$2'"'
     fi
 }
 
@@ -1856,7 +1856,7 @@ do_build_if_needed() {
 # their version and revision. A bare '$1-*_*' glob would also match those of
 # recipes whose names merely start with '$1-', so what precedes the revision
 # has to be a version, which has no '-'.
-pkg_files_of() {
+jinx_pkg_files_of() {
     local file name_version
     for file in "$2/$1"-*_*."$3".xbps; do
         [[ -f ${file} ]] || continue
@@ -1872,64 +1872,64 @@ pkg_files_of() {
 }
 
 # Has package $1 ever been built into directory $2 for arch $3?
-pkg_previously_built() {
+jinx_pkg_previously_built() {
     local files
-    files="$(pkg_files_of "$1" "$2" "$3")"
+    files="$(jinx_pkg_files_of "$1" "$2" "$3")"
     [[ -n ${files} ]]
 }
 
 # Deletes the package files of recipe $1 in directory $2 for arch $3 other than
 # $4, its latest, which the repository index lists instead of them.
-remove_superseded_pkgs() {
+jinx_remove_superseded_pkgs() {
     local files file
-    files="$(pkg_files_of "$1" "$2" "$3")"
+    files="$(jinx_pkg_files_of "$1" "$2" "$3")"
     while IFS= read -r file; do
         if [[ -n ${file} && ${file} != "$4" ]]; then
-            msg2 "Removing ${file##*/}, which ${4##*/} supersedes"
+            jinx_msg2 "Removing ${file##*/}, which ${4##*/} supersedes"
             rm -f "${file}" "${file}.sig" "${file}.sig2"
         fi
     done <<<"${files}"
 }
 
-do_update() {
+jinx_do_update() {
     local with_build="$1"
     shift
     local pkg
-    pkg="$(pkg_file recipes "$1")"
+    pkg="$(jinx_pkg_file recipes "$1")"
 
     # Up to date already? Nothing to do.
     if [[ -f ${pkg} ]]; then
         return 0
     fi
 
-    eval "$(include_recipe "${base_dir}"/recipes/$1)"
+    eval "$(jinx_include_recipe "${base_dir}"/recipes/$1)"
 
     # Not previously built? Skip unless caller asked to build missing ones.
-    if [[ ${with_build} != yes ]] && ! pkg_previously_built "${name}" "${build_dir}/pkgs" "${JINX_ARCH}"; then
+    if [[ ${with_build} != yes ]] && ! jinx_pkg_previously_built "${name}" "${build_dir}/pkgs" "${JINX_ARCH}"; then
         return 0
     fi
 
     local -A _hostdeps_collected
 
-    get_hostdeps_file
+    jinx_get_hostdeps_file
 
     local hostdep
     for hostdep in "${!_hostdeps_collected[@]}"; do
-        tracked_subshell 'do_build_if_needed host-recipes "${hostdep}"'
+        jinx_tracked_subshell 'jinx_do_build_if_needed host-recipes "${hostdep}"'
     done
     local builddeps_var
-    builddeps_var="$(tracked_subshell 'get_builddeps "${name}"')"
+    builddeps_var="$(jinx_tracked_subshell 'jinx_get_builddeps "${name}"')"
     local dep
     for dep in ${builddeps_var}; do
-        tracked_subshell 'do_build_if_needed recipes "${dep}"'
+        jinx_tracked_subshell 'jinx_do_build_if_needed recipes "${dep}"'
     done
 }
 
-do_host_update() {
+jinx_do_host_update() {
     local with_build="$1"
     shift
     local pkg
-    pkg="$(pkg_file host-recipes "$1")"
+    pkg="$(jinx_pkg_file host-recipes "$1")"
 
     # Up to date already? Nothing to do.
     if [[ -f ${pkg} ]]; then
@@ -1937,14 +1937,14 @@ do_host_update() {
     fi
 
     # Not previously built? Skip unless caller asked to build missing ones.
-    if [[ ${with_build} != yes ]] && ! pkg_previously_built "$1" "${build_dir}/host-pkgs" "${host_arch}"; then
+    if [[ ${with_build} != yes ]] && ! jinx_pkg_previously_built "$1" "${build_dir}/host-pkgs" "${host_arch}"; then
         return 0
     fi
 
-    tracked_subshell 'do_pkg host-recipes "'$1'"'
+    jinx_tracked_subshell 'jinx_do_pkg host-recipes "'$1'"'
 }
 
-cmd_update() {
+jinx_cmd_update() {
     local with_build=no
     if [[ ${1-} == "-b" ]]; then
         local with_build=yes
@@ -1955,23 +1955,24 @@ cmd_update() {
     fi
 
     local pkgs pkg
-    pkgs="$(expand_recipes "$@")"
+    pkgs="$(jinx_expand_recipes "$@")"
     for pkg in ${pkgs}; do
         if [[ ${pkg} == host:* ]]; then
-            tracked_subshell 'do_host_update "${with_build}" "${pkg#host:}"'
+            jinx_tracked_subshell 'jinx_do_host_update "${with_build}" "${pkg#host:}"'
         else
-            tracked_subshell 'do_update "${with_build}" "${pkg}"'
+            jinx_tracked_subshell 'jinx_do_update "${with_build}" "${pkg}"'
         fi
     done
 }
 
-# Prints everything that the recipes $2... (as expand_recipes prints them) need
-# built, themselves included, in build order and space separated; if $1 is yes,
-# only what has no package yet. Host packages carry a 'host:' prefix and share
-# the one order with normal ones: a target recipe's hostdeps are host packages
-# and a host recipe's deps are target packages, so the two kinds interleave.
-# Nodes are 'host/<name>' internally because topo_sort splits its graph on ':'.
-closure_of() {
+# Prints everything that the recipes $2... (as jinx_expand_recipes prints them)
+# need built, themselves included, in build order and space separated; if $1 is
+# yes, only what has no package yet. Host packages carry a 'host:' prefix and
+# share the one order with normal ones: a target recipe's hostdeps are host
+# packages and a host recipe's deps are target packages, so the two kinds
+# interleave. Nodes are 'host/<name>' internally because jinx_topo_sort splits
+# its graph on ':'.
+jinx_closure_of() {
     local missing_only="$1"
     shift 1
 
@@ -1988,7 +1989,7 @@ closure_of() {
     local -A node_deps
     local -A collected
 
-    closure_collect() {
+    jinx_closure_collect() {
         local node="$1"
         [[ -n ${collected[$node]+x} ]] && return
         collected[$node]=1
@@ -2008,9 +2009,9 @@ closure_of() {
         fi
 
         local pair srcpair
-        pair=$(eval "$(recipe_info "${nsdir}" "${rpkg}")" \
+        pair=$(eval "$(jinx_recipe_info "${nsdir}" "${rpkg}")" \
             && echo "${hostdeps} ${hostrundeps}|${deps} ${builddeps}")
-        srcpair=$(get_source_deps "${rpkg}" "${nsdir}")
+        srcpair=$(jinx_get_source_deps "${rpkg}" "${nsdir}")
 
         for d in ${pair%%|*} ${srcpair%%|*}; do
             local edges="${edges} host/${d}"
@@ -2022,13 +2023,13 @@ closure_of() {
         node_deps[$node]="${edges}"
 
         for d in ${edges}; do
-            closure_collect "${d}"
+            jinx_closure_collect "${d}"
         done
     }
 
     local r
     for r in ${roots[@]+"${roots[@]}"}; do
-        closure_collect "${r}"
+        jinx_closure_collect "${r}"
     done
 
     local graph= node
@@ -2039,12 +2040,12 @@ closure_of() {
 
     local -a out=()
     local order
-    order="$(topo_sort "${graph}")"
+    order="$(jinx_topo_sort "${graph}")"
     local pkg
     for node in ${order}; do
         if [[ ${node} == host/* ]]; then
             if [[ ${missing_only} == yes ]]; then
-                pkg="$(pkg_file host-recipes "${node#host/}")"
+                pkg="$(jinx_pkg_file host-recipes "${node#host/}")"
                 if [[ -f ${pkg} ]]; then
                     continue
                 fi
@@ -2052,7 +2053,7 @@ closure_of() {
             out+=("host:${node#host/}")
         else
             if [[ ${missing_only} == yes ]]; then
-                pkg="$(pkg_file recipes "${node}")"
+                pkg="$(jinx_pkg_file recipes "${node}")"
                 if [[ -f ${pkg} ]]; then
                     continue
                 fi
@@ -2064,7 +2065,7 @@ closure_of() {
     echo "${out[*]-}"
 }
 
-cmd_closure() {
+jinx_cmd_closure() {
     local missing_only=no
     if [[ ${1-} == -m ]]; then
         missing_only=yes
@@ -2075,11 +2076,11 @@ cmd_closure() {
     fi
 
     local pkgs
-    pkgs="$(expand_recipes "$@")"
-    closure_of "${missing_only}" ${pkgs}
+    pkgs="$(jinx_expand_recipes "$@")"
+    jinx_closure_of "${missing_only}" ${pkgs}
 }
 
-cmd_download_for() {
+jinx_cmd_download_for() {
     # Args: repo_url recipes_dir pkgs_dir arch name1 [name2 ...]
     local repo_url="$1"
     local recipes_dir="$2"
@@ -2092,20 +2093,20 @@ cmd_download_for() {
     # Collect transitive deps. Nothing is built here, so the only edges that
     # matter are the ones xbps itself records in a binary package: deps and
     # binpkgdeps for a normal recipe, hostrundeps for a host one, exactly what
-    # do_pkg hands to 'xbps-create -D'. Build-time edges
+    # jinx_do_pkg hands to 'xbps-create -D'. Build-time edges
     # (builddeps, hostdeps, and anything the source step needs) are irrelevant.
     local -A pkg_deps
     local -A bootstrap
 
     # Only the recipes reached from the requested packages are evaluated.
-    download_info() {
+    jinx_download_info() {
         [[ -n ${pkg_deps[$1]+x} ]] && return
         local info
         if [[ ${recipes_dir} == recipes ]]; then
-            info=$(eval "$(recipe_info "${recipes_dir}" "$1")" \
+            info=$(eval "$(jinx_recipe_info "${recipes_dir}" "$1")" \
                 && echo "${bootstrap_pkg}|${deps} ${binpkgdeps}")
         else
-            info=$(eval "$(recipe_info "${recipes_dir}" "$1")" \
+            info=$(eval "$(jinx_recipe_info "${recipes_dir}" "$1")" \
                 && echo "|${hostrundeps}")
         fi
         bootstrap[$1]="${info%%|*}"
@@ -2114,58 +2115,58 @@ cmd_download_for() {
 
     local -A collected
 
-    collect_all_deps() {
+    jinx_collect_all_deps() {
         local pkg="$1"
         [[ -n ${collected[$pkg]+x} ]] && return
         collected[$pkg]=1
-        download_info "${pkg}"
+        jinx_download_info "${pkg}"
         local dep
         for dep in ${pkg_deps[$pkg]}; do
-            download_info "${dep}"
-            # do_pkg keeps a bootstrap package out of what it records, so
+            jinx_download_info "${dep}"
+            # jinx_do_pkg keeps a bootstrap package out of what it records, so
             # nothing downloaded will ever ask xbps to resolve one.
             [[ ${bootstrap[$dep]} == yes ]] && continue
-            collect_all_deps "$dep"
+            jinx_collect_all_deps "$dep"
         done
     }
 
     for pkg in ${all_packages}; do
-        collect_all_deps "${pkg}"
+        jinx_collect_all_deps "${pkg}"
     done
 
     # Determine which packages are missing locally
     local download_list=""
     local dep pkg
     for dep in "${!collected[@]}"; do
-        pkg="$(pkg_file "${recipes_dir}" "${dep}")"
+        pkg="$(jinx_pkg_file "${recipes_dir}" "${dep}")"
         if [[ ! -f ${pkg} ]]; then
             download_list="${download_list} ${pkg##*/}"
         fi
     done
 
     if [[ -z ${download_list} ]]; then
-        msg "All requested ${recipes_dir} packages are already in ${pkgs_dir##*/}/"
+        jinx_msg "All requested ${recipes_dir} packages are already in ${pkgs_dir##*/}/"
         return
     fi
 
     # Fetch repo index for checksum verification
-    msg "Fetching the ${arch} repository index"
-    make_temp
+    jinx_msg "Fetching the ${arch} repository index"
+    jinx_make_temp
     local repodata_path="${tmp}"
     wget -O "${repodata_path}" "${repo_url}/${arch}-repodata" \
         || die "failed to fetch repository index from ${repo_url}"
 
-    make_temp
+    jinx_make_temp
     local index_plist="${tmp}"
     zstdcat "${repodata_path}" | tar -xOf - index.plist >"${index_plist}"
 
     # Download each missing package
     local -a dl_names=() dl_paths=() dl_dests=()
-    local pkg_file
-    for pkg_file in ${download_list}; do
+    local file_name
+    for file_name in ${download_list}; do
         # Without the SHA256 that the repository index records for it, there
         # would be nothing to verify the download against.
-        local pkg_name="${pkg_file%.${arch}.xbps}"
+        local pkg_name="${file_name%.${arch}.xbps}"
         local pkg_name="${pkg_name%-*}"
         dl_names+=("${pkg_name}")
         pkg_name="$(printf '%s' "${pkg_name}" | sed 's/[.[\*^$\\]/\\&/g')"
@@ -2174,20 +2175,20 @@ cmd_download_for() {
             /<key>filename-sha256<\\/key>/{n;s/.*<string>\\(.*\\)<\\/string>.*/\\1/p;}
         }" "${index_plist}")"
         if [[ -z ${expected_sha256} ]]; then
-            die "${pkg_file} is not in the repository index of ${repo_url}, so it cannot be verified"
+            die "${file_name} is not in the repository index of ${repo_url}, so it cannot be verified"
         fi
 
-        msg2 "Downloading ${pkg_file}"
-        make_temp
+        jinx_msg2 "Downloading ${file_name}"
+        jinx_make_temp
         local dl_path="${tmp}"
-        wget -O "${dl_path}" "${repo_url}/${pkg_file}" \
-            || die "failed to download ${pkg_file} from ${repo_url}"
+        wget -O "${dl_path}" "${repo_url}/${file_name}" \
+            || die "failed to download ${file_name} from ${repo_url}"
 
         local actual_sha256
         actual_sha256="$(sha256sum "${dl_path}")"
         local actual_sha256="${actual_sha256%% *}"
         if [[ ${actual_sha256} != "${expected_sha256}" ]]; then
-            die "SHA256 mismatch for ${pkg_file}:
+            die "SHA256 mismatch for ${file_name}:
   expected '${expected_sha256}'
   got      '${actual_sha256}'"
         fi
@@ -2195,7 +2196,7 @@ cmd_download_for() {
         # mktemp made it private; built packages are not.
         chmod 0644 "${dl_path}"
         dl_paths+=("${dl_path}")
-        dl_dests+=("${pkgs_dir}/${pkg_file}")
+        dl_dests+=("${pkgs_dir}/${file_name}")
     done
 
     # Only once every download checked out, so that a failure leaves no package
@@ -2211,11 +2212,11 @@ cmd_download_for() {
         -f
 
     for i in "${!dl_dests[@]}"; do
-        remove_superseded_pkgs "${dl_names[i]}" "${pkgs_dir}" "${arch}" "${dl_dests[i]}"
+        jinx_remove_superseded_pkgs "${dl_names[i]}" "${pkgs_dir}" "${arch}" "${dl_dests[i]}"
     done
 }
 
-cmd_download() {
+jinx_cmd_download() {
     if [[ -z ${1-} ]]; then
         die "download requires at least one package name"
     fi
@@ -2224,7 +2225,7 @@ cmd_download() {
     # its own arch repodata, from its own repo URL, into its own pkgs/ tree.
     local -a host_pkgs=() normal_pkgs=()
     local pkgs pkg
-    pkgs="$(expand_recipes "$@")"
+    pkgs="$(jinx_expand_recipes "$@")"
     for pkg in ${pkgs}; do
         if [[ ${pkg} == host:* ]]; then
             host_pkgs+=("${pkg#host:}")
@@ -2237,35 +2238,35 @@ cmd_download() {
         if [[ -z ${JINX_REPO_URL-} ]]; then
             die "JINX_REPO_URL not set in Jinxfile"
         fi
-        cmd_download_for "${JINX_REPO_URL}" recipes "${build_dir}/pkgs" "${JINX_ARCH}" "${normal_pkgs[@]}"
+        jinx_cmd_download_for "${JINX_REPO_URL}" recipes "${build_dir}/pkgs" "${JINX_ARCH}" "${normal_pkgs[@]}"
     fi
     if (( ${#host_pkgs[@]} > 0 )); then
         if [[ -z ${JINX_HOST_REPO_URL-} ]]; then
             die "JINX_HOST_REPO_URL not set in Jinxfile (required for downloading host packages)"
         fi
-        cmd_download_for "${JINX_HOST_REPO_URL}" host-recipes "${build_dir}/host-pkgs" "${host_arch}" "${host_pkgs[@]}"
+        jinx_cmd_download_for "${JINX_HOST_REPO_URL}" host-recipes "${build_dir}/host-pkgs" "${host_arch}" "${host_pkgs[@]}"
     fi
 
-    msg "Download complete"
+    jinx_msg "Download complete"
 }
 
-cmd_regen() {
+jinx_cmd_regen() {
     if [[ -z ${1-} ]]; then
         die "regen requires at least one package name"
     fi
 
     local pkgs pkg
-    pkgs="$(expand_recipes "$@")"
+    pkgs="$(jinx_expand_recipes "$@")"
     for pkg in ${pkgs}; do
         if [[ ${pkg} == host:* ]]; then
-            tracked_subshell 'do_regen "${pkg#host:}" host-recipes'
+            jinx_tracked_subshell 'jinx_do_regen "${pkg#host:}" host-recipes'
         else
-            tracked_subshell 'do_regen "${pkg}" recipes'
+            jinx_tracked_subshell 'jinx_do_regen "${pkg}" recipes'
         fi
     done
 }
 
-cmd_run_in() {
+jinx_cmd_run_in() {
     if [[ -z ${1-} ]]; then
         die "run-in requires a recipe name"
     fi
@@ -2281,19 +2282,19 @@ cmd_run_in() {
     fi
 
     local run_in_recipes run_in_recipe
-    run_in_recipes="$(expand_recipes "${recipe_glob}")"
+    run_in_recipes="$(jinx_expand_recipes "${recipe_glob}")"
     for run_in_recipe in ${run_in_recipes}; do
         local run_in_recipe="${run_in_recipe#host:}"
 
-        eval "$(include_recipe "${base_dir}"/${recipes_dir}/${run_in_recipe})"
+        eval "$(jinx_include_recipe "${base_dir}"/${recipes_dir}/${run_in_recipe})"
 
         if [[ -n ${from_source} ]]; then
-            tracked_subshell 'do_source "${from_source}" "${_from_source_dir}"'
+            jinx_tracked_subshell 'jinx_do_source "${from_source}" "${_from_source_dir}"'
         else
-            tracked_subshell 'do_source "${name}" "${recipes_dir}"'
+            jinx_tracked_subshell 'jinx_do_source "${name}" "${recipes_dir}"'
         fi
 
-        make_temp
+        jinx_make_temp
         local cmd_file="${tmp}"
         {
             printf 'exec'
@@ -2310,25 +2311,25 @@ cmd_run_in() {
             # JINX_NATIVE_MODE (host_arch sysroot at /sysroot, host pkgs at /usr/local).
             local cross_compile=yes
         fi
-        prepare_container
+        jinx_prepare_container
 
         local container_sources_ro=
         local container_base_dir_ro=
         local allow_network=yes
-        run_in_container internal-stage "${recipes_dir}" run-in "${run_in_recipe}" "${cmd_file_inner}"
+        jinx_run_in_container internal-stage "${recipes_dir}" run-in "${run_in_recipe}" "${cmd_file_inner}"
 
-        destroy_container
+        jinx_destroy_container
     done
 }
 
-cmd_rebuild() {
+jinx_cmd_rebuild() {
     if [[ -z ${1-} ]]; then
         die "rebuild requires at least one package name"
     fi
 
     local pkgs
-    pkgs="$(expand_recipes "$@")"
-    build_with_closure yes ${pkgs}
+    pkgs="$(jinx_expand_recipes "$@")"
+    jinx_build_with_closure yes ${pkgs}
 }
 
 # Writes recipe $1 to a temporary file, named by tmp, with the first line that
@@ -2337,9 +2338,9 @@ cmd_rebuild() {
 # command $4 prints for the old value instead, keeping its indentation, quotes,
 # and trailing blanks. Sets matched_lines to the number of such lines, and
 # matched_value to the old value.
-rewrite_recipe_assignment() {
+jinx_rewrite_recipe_assignment() {
     local re='^([[:space:]]*)'"$2"'=("?|'\''?)('"$3"')("?|'\''?)([[:space:]]*)$'
-    make_temp
+    jinx_make_temp
     local out="${tmp}"
     local count=0
     local line value
@@ -2358,11 +2359,11 @@ rewrite_recipe_assignment() {
     tmp="${out}"
 }
 
-next_revision() {
+jinx_next_revision() {
     echo "$(($1 + 1))"
 }
 
-revbump_one_recipe() {
+jinx_revbump_one_recipe() {
     # Write the recipe with its revision incremented to the temporary file
     # revbump_out, and its old revision to revbump_old.
     local recipe_file="$1"
@@ -2372,7 +2373,7 @@ revbump_one_recipe() {
         die "revbump: recipe file '${recipe_file}' not found"
     fi
 
-    rewrite_recipe_assignment "${recipe_file}" revision '[0-9]+' next_revision
+    jinx_rewrite_recipe_assignment "${recipe_file}" revision '[0-9]+' jinx_next_revision
     if (( matched_lines != 1 )); then
         die "revbump: recipe '${label}' has ${matched_lines} literal 'revision=' line(s); expected exactly 1 (bump it manually)"
     fi
@@ -2381,7 +2382,7 @@ revbump_one_recipe() {
     revbump_old="${matched_value}"
 }
 
-cmd_revbump() {
+jinx_cmd_revbump() {
     # Bump the revision of every recipe that depends, directly or
     # transitively, on the given package(s). Targets and dependents may be
     # normal recipes or host recipes (selected with the 'host:' prefix).
@@ -2400,7 +2401,7 @@ cmd_revbump() {
             local node="${nsdir}/${pkg}"
 
             local depinfo
-            depinfo="$(eval "$(recipe_info "${nsdir}" "${pkg}")" \
+            depinfo="$(eval "$(jinx_recipe_info "${nsdir}" "${pkg}")" \
                 && printf '%s\n%s\n%s\n' "${deps} ${builddeps}" "${hostdeps} ${hostrundeps}" \
                     "${from_source:+${_from_source_dir}/${from_source}}")"
             local -a depinfo_lines
@@ -2416,7 +2417,7 @@ cmd_revbump() {
             # Preparing the source is part of building the package, so what the
             # source step needs is a revbump edge just like what the build does.
             local srcpair
-            srcpair="$(get_source_deps "${pkg}" "${nsdir}")"
+            srcpair="$(jinx_get_source_deps "${pkg}" "${nsdir}")"
             local rhost_line="${rhost_line} ${srcpair%%|*}"
             local rdeps_line="${rdeps_line} ${srcpair#*|}"
 
@@ -2433,19 +2434,19 @@ cmd_revbump() {
     local -A to_bump
     local -A targets
 
-    revbump_visit() {
+    jinx_revbump_visit() {
         local n="$1"
         local r
         for r in ${revdeps[$n]-}; do
             if [[ -z ${to_bump[$r]+x} ]]; then
                 to_bump[$r]=1
-                revbump_visit "$r"
+                jinx_revbump_visit "$r"
             fi
         done
     }
 
     local pkgs target
-    pkgs="$(expand_recipes "$@")"
+    pkgs="$(jinx_expand_recipes "$@")"
     for pkg in ${pkgs}; do
         if [[ ${pkg} == host:* ]]; then
             target="host-recipes/${pkg#host:}"
@@ -2453,7 +2454,7 @@ cmd_revbump() {
             target="recipes/${pkg}"
         fi
         targets["${target}"]=1
-        revbump_visit "${target}"
+        jinx_revbump_visit "${target}"
     done
 
     # A requested package is the changed input itself, never a bump target.
@@ -2463,14 +2464,14 @@ cmd_revbump() {
     local -a bump_nodes=() bump_outs=() bump_olds=()
     for node in $(printf '%s\n' "${!to_bump[@]}" | sort); do
         [[ -n ${targets[$node]+x} ]] && continue
-        revbump_one_recipe "${base_dir}/${node}/recipe" "${node}"
+        jinx_revbump_one_recipe "${base_dir}/${node}/recipe" "${node}"
         bump_nodes+=("${node}")
         bump_outs+=("${revbump_out}")
         bump_olds+=("${revbump_old}")
     done
 
     if (( ${#bump_nodes[@]} == 0 )); then
-        msg "No dependents found for: $*"
+        jinx_msg "No dependents found for: $*"
         return
     fi
 
@@ -2478,11 +2479,11 @@ cmd_revbump() {
     for i in "${!bump_nodes[@]}"; do
         # Written through, so that the recipe keeps its mode and owner.
         cat "${bump_outs[i]}" >"${base_dir}/${bump_nodes[i]}/recipe"
-        msg2 "${bump_nodes[i]}: revision ${bump_olds[i]} -> $((bump_olds[i] + 1))"
+        jinx_msg2 "${bump_nodes[i]}: revision ${bump_olds[i]} -> $((bump_olds[i] + 1))"
     done
 }
 
-pkg_file_list() {
+jinx_pkg_file_list() {
     # The paths the built package $1 contains, minus its metadata entries.
     # pipefail matters here: the trailing 'grep || true' always succeeds, so
     # without it a failed decompression would read as an empty package and
@@ -2493,7 +2494,7 @@ pkg_file_list() {
     zstdcat "$1" | tar -tf - | ( grep -v "${files_to_ignore}" || true )
 }
 
-cmd_install() {
+jinx_cmd_install() {
     local force_install=""
     if [[ ${1-} == "-f" ]]; then
         local force_install="$1"
@@ -2512,14 +2513,14 @@ cmd_install() {
 
     local pkgs_to_install=""
     local pkgs pkg
-    pkgs="$(expand_recipes "$@")"
+    pkgs="$(jinx_expand_recipes "$@")"
     for pkg in ${pkgs}; do
         if [[ ${pkg} == host:* ]]; then
             die "install only installs normal recipes, not '${pkg}'"
         fi
 
         local bootstrap_pkg
-        bootstrap_pkg=$(eval "$(recipe_info recipes "${pkg}")" && echo "${bootstrap_pkg}")
+        bootstrap_pkg=$(eval "$(jinx_recipe_info recipes "${pkg}")" && echo "${bootstrap_pkg}")
         if [[ ${bootstrap_pkg} == yes ]]; then
             continue
         fi
@@ -2539,28 +2540,28 @@ cmd_install() {
         return
     fi
 
-    make_temp
+    jinx_make_temp
     local all_files="${tmp}"
 
     local pkg_path
     for pkg in ${pkgs_to_install}; do
-        pkg_path="$(pkg_file recipes "${pkg}")"
+        pkg_path="$(jinx_pkg_file recipes "${pkg}")"
         if [[ ! -f ${pkg_path} ]]; then
             if [[ $(id -u) == 0 ]]; then
                 die "a package needs to be built, but Jinx was invoked as root"
             fi
-            tracked_subshell 'do_pkg recipes "${pkg}"'
+            jinx_tracked_subshell 'jinx_do_pkg recipes "${pkg}"'
         fi
 
-        pkg_file_list "${pkg_path}" >>"${all_files}"
+        jinx_pkg_file_list "${pkg_path}" >>"${all_files}"
     done
 
-    msg "Checking for file conflicts"
+    jinx_msg "Checking for file conflicts"
 
-    make_temp
+    jinx_make_temp
     local all_files_sorted="${tmp}"
 
-    make_temp
+    jinx_make_temp
     local all_files_uniq="${tmp}"
 
     sort <"${all_files}" >"${all_files_sorted}"
@@ -2570,27 +2571,27 @@ cmd_install() {
     dup_elements="$(comm -23 "${all_files_sorted}" "${all_files_uniq}" | uniq)"
 
     if [[ -n ${dup_elements} ]]; then
-        error "duplicate files were found:"
+        jinx_error "duplicate files were found:"
         local elem owners
         while IFS= read -r elem; do
             owners=
             for pkg in ${pkgs_to_install}; do
-                owners+=$(tracked_subshell '
+                owners+=$(jinx_tracked_subshell '
                 local pkg_path
-                pkg_path="$(pkg_file recipes "${pkg}")"
-                if pkg_file_list "${pkg_path}" | grep -qxF -- "${elem}"; then
+                pkg_path="$(jinx_pkg_file recipes "${pkg}")"
+                if jinx_pkg_file_list "${pkg_path}" | grep -qxF -- "${elem}"; then
                     printf " %s" "${pkg}"
                 fi
                 ')
             done
-            msg2 "${elem}:${owners}"
+            jinx_msg2 "${elem}:${owners}"
         done <<<"${dup_elements}"
         exit 1
     fi
 
-    msg "Installing into ${sysroot}"
+    jinx_msg "Installing into ${sysroot}"
     for pkg in ${pkgs_to_install}; do
-        msg2 "${pkg}"
+        jinx_msg2 "${pkg}"
     done
 
     # xbps seems to only install a package every second time when reinstalling
@@ -2603,13 +2604,13 @@ cmd_install() {
 
     XBPS_ARCH=invalid \
     XBPS_TARGET_ARCH="${JINX_ARCH}" \
-        run_quietly "failed to install the packages:" \
+        jinx_run_quietly "failed to install the packages:" \
             xbps-install -y $force_install -r "${sysroot}" -R "${build_dir}"/pkgs ${pkgs_to_install} \
         || exit 1
 }
 
-reinit_container() {
-    force_remove "$JINX_CACHE_DIR/sets" "$JINX_CACHE_DIR/apt-cache"
+jinx_reinit_container() {
+    jinx_force_remove "$JINX_CACHE_DIR/sets" "$JINX_CACHE_DIR/apt-cache"
 
     mkdir -p "${apt_cache}"
     mkdir -p "${JINX_CACHE_DIR}/tmp"
@@ -2647,7 +2648,7 @@ reinit_container() {
     # The tarball wraps everything in a top-level ${xbps_dirname}/ dir; extract
     # then rename so ${JINX_CACHE_DIR}/xbps/bin is where PATH expects it.
     ( cd "${JINX_CACHE_DIR}" && gunzip < "${xbps_tarball}" | tar -xf - )
-    force_remove "${JINX_CACHE_DIR}/xbps"
+    jinx_force_remove "${JINX_CACHE_DIR}/xbps"
     mv "${JINX_CACHE_DIR}/${xbps_dirname}" "${JINX_CACHE_DIR}/xbps"
     rm "${JINX_CACHE_DIR}/${xbps_tarball}"
 
@@ -2715,9 +2716,9 @@ EOF
     # target, but it is only a few copies plus a @VERSION@ substitution, so do
     # it inline and keep make out of the prerequisites. The version is taken
     # from debian/changelog exactly the way that Makefile takes it.
-    tracked_subshell '
+    jinx_tracked_subshell '
         cd "${JINX_CACHE_DIR}"
-        make_temp -d
+        jinx_make_temp -d
         local _ds_tmp="${tmp}"
         wget -O "${_ds_tmp}/debootstrap.tar.gz" "${debootstrap_url}"
         if ! sha256sum "${_ds_tmp}/debootstrap.tar.gz" | grep "${debootstrap_sha256sum}" >/dev/null 2>&1; then
@@ -2754,14 +2755,14 @@ EOF
 
     local dir
     for dir in dev proc sys run tmp var/tmp; do
-        force_remove "${JINX_CACHE_DIR}/sets/.image/${dir}"
+        jinx_force_remove "${JINX_CACHE_DIR}/sets/.image/${dir}"
         mkdir -p "${JINX_CACHE_DIR}/sets/.image/${dir}"
     done
 
     rm "${JINX_CACHE_DIR}/sets/.image/etc/resolv.conf"
     echo localhost >"${JINX_CACHE_DIR}/sets/.image/etc/hostname"
 
-    run_in_container1 "$JINX_CACHE_DIR/sets/.image" /debootstrap/debootstrap --second-stage
+    jinx_run_in_container1 "$JINX_CACHE_DIR/sets/.image" /debootstrap/debootstrap --second-stage
 
     echo 'en_US.UTF-8 UTF-8' > "$JINX_CACHE_DIR/sets/.image/etc/locale.gen"
     echo 'APT::Install-Suggests "0";
@@ -2769,14 +2770,14 @@ APT::Install-Recommends "0";
 APT::Sandbox::User "root";
 Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.conf"
 
-    run_in_container1 "$JINX_CACHE_DIR/sets/.image" apt-get update
-    run_in_container1 "$JINX_CACHE_DIR/sets/.image" apt-get install -y locales
-    run_in_container1 "$JINX_CACHE_DIR/sets/.image" locale-gen
+    jinx_run_in_container1 "$JINX_CACHE_DIR/sets/.image" apt-get update
+    jinx_run_in_container1 "$JINX_CACHE_DIR/sets/.image" apt-get install -y locales
+    jinx_run_in_container1 "$JINX_CACHE_DIR/sets/.image" locale-gen
 
     # Fix permissions of files
     find "$JINX_CACHE_DIR/sets/.image" -perm 000 -exec chmod 755 {} + 2>/dev/null
 
-    run_in_container1 "$JINX_CACHE_DIR/sets/.image" apt-get install -y bash bzip2 ca-certificates curl diffutils findutils gawk git grep gzip lzip netbase patch procps sed tar unzip xz-utils zstd ${JINX_BASE_PACKAGES-}
+    jinx_run_in_container1 "$JINX_CACHE_DIR/sets/.image" apt-get install -y bash bzip2 ca-certificates curl diffutils findutils gawk git grep gzip lzip netbase patch procps sed tar unzip xz-utils zstd ${JINX_BASE_PACKAGES-}
 
     if [[ -n ${JINX_CMAKE_PLATFORM-} ]]; then
         cp "${base_dir}/${JINX_CMAKE_PLATFORM}" "${JINX_CACHE_DIR}"/sets/.image/usr/share/cmake-*/Modules/Platform/
@@ -2784,7 +2785,7 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
 }
 
 # The CMake platform file's path and contents, which the image holds a copy of.
-cmake_platform_stamp() {
+jinx_cmake_platform_stamp() {
     if [[ -n ${JINX_CMAKE_PLATFORM-} ]]; then
         local sum
         sum="$(sha256sum <"${base_dir}/${JINX_CMAKE_PLATFORM}")"
@@ -2792,24 +2793,24 @@ cmake_platform_stamp() {
     fi
 }
 
-first_use() {
-    msg "Preparing the Jinx cache"
+jinx_first_use() {
+    jinx_msg "Preparing the Jinx cache"
 
-    reinit_container
+    jinx_reinit_container
 
     echo "${jinx_version}" >"${JINX_CACHE_DIR}/version"
     echo "${JINX_DEBIAN_SNAPSHOT}" >"${JINX_CACHE_DIR}/debian_snapshot"
     echo "${JINX_BASE_PACKAGES-}" >"${JINX_CACHE_DIR}/base_packages"
-    cmake_platform_stamp >"${JINX_CACHE_DIR}/cmake_platform"
+    jinx_cmake_platform_stamp >"${JINX_CACHE_DIR}/cmake_platform"
 
-    msg "The Jinx cache is ready"
+    jinx_msg "The Jinx cache is ready"
 }
 
-redo_first_use() {
+jinx_redo_first_use() {
     # Without a version stamp, whatever is there is what an interrupted first
     # run left behind, not an old cache.
     if [[ -f "${JINX_CACHE_DIR}/version" ]]; then
-        msg "Purging the old Jinx cache"
+        jinx_msg "Purging the old Jinx cache"
     fi
 
     # Everything except the lock file, and the downloaded archives, which do not
@@ -2826,15 +2827,15 @@ redo_first_use() {
         _stale+=("${_entry}")
     done
     if (( ${#_stale[@]} > 0 )); then
-        force_remove "${_stale[@]}"
+        jinx_force_remove "${_stale[@]}"
     fi
 
-    first_use
+    jinx_first_use
 }
 
 # A cache that root rebuilt would lock its owner out of it, so as root, have the
 # user owning the cache directory rebuild it.
-rebuild_cache_as_owner() {
+jinx_rebuild_cache_as_owner() {
     local owner
     owner="$(stat -c '%u:%g' "${JINX_CACHE_DIR}")"
     if [[ ${owner%%:*} == 0 ]]; then
@@ -2898,70 +2899,70 @@ if [[ ${in_container} == false && $1 != rebuild-cache ]]; then
     if  [[ ! -f "${JINX_CACHE_DIR}/version" || $(cat "${JINX_CACHE_DIR}/version") != "${jinx_version}" ]] \
      || [[ ! -f "${JINX_CACHE_DIR}/debian_snapshot" || $(cat "${JINX_CACHE_DIR}/debian_snapshot") != "${JINX_DEBIAN_SNAPSHOT}" ]] \
      || [[ ! -f "${JINX_CACHE_DIR}/base_packages" || $(cat "${JINX_CACHE_DIR}/base_packages") != "${JINX_BASE_PACKAGES-}" ]] \
-     || [[ ! -f "${JINX_CACHE_DIR}/cmake_platform" || $(cat "${JINX_CACHE_DIR}/cmake_platform") != "$(cmake_platform_stamp)" ]]; then
+     || [[ ! -f "${JINX_CACHE_DIR}/cmake_platform" || $(cat "${JINX_CACHE_DIR}/cmake_platform") != "$(jinx_cmake_platform_stamp)" ]]; then
         if [[ $(id -u) == 0 ]]; then
-            rebuild_cache_as_owner
+            jinx_rebuild_cache_as_owner
         else
-            redo_first_use
+            jinx_redo_first_use
         fi
     fi
 
-    make_temp -d
+    jinx_make_temp -d
     recipe_info_cache="${tmp}"
 fi
 
 case "$1" in
     internal-prepare)
-        do_prepare "$2" "$3"
+        jinx_do_prepare "$2" "$3"
         ;;
     internal-fetch)
-        do_fetch "$2" "$3"
+        jinx_do_fetch "$2" "$3"
         ;;
     internal-patch)
-        do_patch "$2" "$3"
+        jinx_do_patch "$2" "$3"
         ;;
     internal-stage)
         shift 1
-        do_stage "$@"
+        jinx_do_stage "$@"
         ;;
     build)
         shift 1
-        cmd_build "$@"
+        jinx_cmd_build "$@"
         ;;
     update)
         shift 1
-        cmd_update "$@"
+        jinx_cmd_update "$@"
         ;;
     regenerate|regen)
         shift 1
-        cmd_regen "$@"
+        jinx_cmd_regen "$@"
         ;;
     rebuild)
         shift 1
-        cmd_rebuild "$@"
+        jinx_cmd_rebuild "$@"
         ;;
     revbump)
         shift 1
-        cmd_revbump "$@"
+        jinx_cmd_revbump "$@"
         ;;
     install)
         shift 1
-        cmd_install "$@"
+        jinx_cmd_install "$@"
         ;;
     rebuild-cache)
-        redo_first_use
+        jinx_redo_first_use
         ;;
     closure)
         shift 1
-        cmd_closure "$@"
+        jinx_cmd_closure "$@"
         ;;
     download)
         shift 1
-        cmd_download "$@"
+        jinx_cmd_download "$@"
         ;;
     run-in)
         shift 1
-        cmd_run_in "$@"
+        jinx_cmd_run_in "$@"
         ;;
     *)
         die "unknown command '$1'; see '$0 help'"

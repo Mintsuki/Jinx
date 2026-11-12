@@ -364,7 +364,7 @@ All build-driving commands walk **downward** through the dependency tree, rebuil
 - [`update <pkg>`](<#update>) performs the same walk, gated on `<pkg>` itself being missing; the walk uses one topological sort over `<pkg>`'s entire transitive closure.
 - [`closure -m`](<#closure>) walks the same closure as `build`, already-built parts included, and prints everything missing in it, in build order, without building anything.
 
-Topological sorting is required for correctness: before any recipe builds, every transitive dep of it must already have its XBPS file in `pkgs/` (or, for host deps, `host-pkgs/`), because `prepare_container` uses `xbps-install` to populate the build sysroot from `pkgs/` and the container's `/usr/local` from `host-pkgs/`. Sorting deps-first ensures that is always the case.
+Topological sorting is required for correctness: before any recipe builds, every transitive dep of it must already have its XBPS file in `pkgs/` (or, for host deps, `host-pkgs/`), because Jinx uses `xbps-install` to populate the build sysroot from `pkgs/` and the container's `/usr/local` from `host-pkgs/`. Sorting deps-first ensures that is always the case.
 
 ### Reverse dependencies are *not* automatically rebuilt
 
@@ -525,7 +525,7 @@ If a recipe sets **both** `source_dir` and [`git_url`](<#git_url>), Jinx treats 
 The behaviour is:
 
 - On the first build, if `source_dir` does not yet exist, Jinx performs a **full** clone of `git_url` into it and checks out [`commit`](<#commit>) (which remains **required**, as the reproducible starting point). [`shallow`](<#shallow>) has no effect here - managed clones are always full clones so you have history to work with.
-- On every later build, an **existing** `source_dir` is used as-is. Jinx never re-clones it, never checks out `commit` again, never patches it, and never deletes it (neither `clean_sources` nor [`JINX_CLEAN_WORKDIRS`](<#environment-variables>) touch a local package's tree). It is your working tree to develop in - commit, branch, and push with `git` directly.
+- On every later build, an **existing** `source_dir` is used as-is. Jinx never re-clones it, never checks out `commit` again, never patches it, and never deletes it (neither a fresh fetch nor [`JINX_CLEAN_WORKDIRS`](<#environment-variables>) touches a local package's tree). It is your working tree to develop in - commit, branch, and push with `git` directly.
 - To start over from a fresh clone, delete the `source_dir` directory; the next build re-clones it.
 
 Because it is a local package, a managed clone cannot carry a `patches/` directory's effect (patches are skipped, as with any local package) - manage changes with git instead. This works for both normal recipes and host recipes.
@@ -1189,7 +1189,7 @@ In addition to the recipe's own [Properties](<#properties>) and anything the [Ji
 | `build_dir` | The build directory. `/build_dir` inside the container; absolute host path outside. |
 | `JINX_ARCH` | Target architecture (`x86_64`, `riscv64`, ...). |
 
-Recipes should treat these as read-only.
+Recipes should treat these as read-only. A recipe can also call `die <message>`, which reports the message as an error and stops the build. Apart from `die` and the stage functions that recipes define, Jinx's own functions all start with `jinx_`, a prefix that recipes and the `Jinxfile` should leave to Jinx.
 
 ### Host Recipes
 
