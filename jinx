@@ -252,11 +252,6 @@ fi
 
 JINX_CONFIG_FILE="${base_dir}/Jinxfile"
 
-if [[ ! -d "$(dirname "$JINX_CONFIG_FILE")" ]]; then
-    die "$0: cannot access Jinxfile directory"
-fi
-JINX_CONFIG_FILE="$(cd "$(dirname "$JINX_CONFIG_FILE")" && pwd -P)"/"$(basename "$JINX_CONFIG_FILE")"
-
 if [[ -z ${JINX_CACHE_DIR} ]]; then
     JINX_CACHE_DIR="${base_dir}/.jinx-cache"
 fi
@@ -812,8 +807,6 @@ run_in_container() {
             ${run_in_cont_term} \
             ${run_in_cont_colorterm} \
             JINX_PARALLELISM=${parallelism} \
-            JINX_CONFIG_FILE=/base_dir/Jinxfile \
-            JINX_SOURCE_DIR=/base_dir \
             /bin/bash /jinx \
             $(for arg in "$@"; do printf '"%s" \\\n' "${arg//\"/\\\"}"; done)
             # keep this whitespace
