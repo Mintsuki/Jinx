@@ -439,6 +439,8 @@ Defined within the recipe, there are a number of properties that determine how J
 
 Specifies the version of this recipe. This **should** be set to the version number of the source this package is for (e.g. `version=2.69` for `autoconf-2.69`). Jinx uses the `version` property internally to determine whether to rebuild a package after a version bump (this is why bumping `version` (or `revision`) automatically invalidates a previous build).
 
+It must not contain `-`, as XBPS splits a package's name from its version at the last `-`; replace any `-` in an upstream version, e.g. with `.`. A recipe using [`from_source`](<#from_source>) or [`from_host_source`](<#from_host_source>) takes the source recipe's `version` instead and sets none itself.
+
 Example:
 
 ```sh
@@ -454,7 +456,7 @@ version=2.4.0
 
 - **Required.**
 
-Used together with `version` to identify the built XBPS package file (`<name>-<version>_<revision>.<arch>.xbps`). Bump `revision` when the recipe's build logic or patches change without a version change, so that the package is rebuilt and reinstalled.
+A non-negative integer, used together with `version` to identify the built XBPS package file (`<name>-<version>_<revision>.<arch>.xbps`). Bump `revision` when the recipe's build logic or patches change without a version change, so that the package is rebuilt and reinstalled.
 
 Example:
 

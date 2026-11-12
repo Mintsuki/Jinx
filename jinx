@@ -475,6 +475,21 @@ local _sources_root=${_from_source_dir/recipes/sources}
 if [[ -n ${from_source} && -d ${recipe_dir}/patches ]]; then
     die "recipe '${name}' uses from_source/from_host_source and cannot have its own patches/ directory (patches live with the source recipe)"
 fi
+
+if [[ ! ${revision} =~ ^[0-9]+$ ]]; then
+    die "recipe '${name}' sets revision to '${revision}'; it must be a non-negative integer"
+fi
+
+# xbps splits a package's name from its version at the last '-'. A consumer
+# of another recipe's source takes that recipe's version, so has none here.
+if [[ -z ${from_source} ]]; then
+    if [[ -z ${version} ]]; then
+        die "recipe '${name}' sets no version"
+    fi
+    if [[ ${version} == *-* ]]; then
+        die "recipe '${name}' sets version to '${version}'; it must not contain '-'"
+    fi
+fi
 EOF
 }
 
