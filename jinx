@@ -2167,28 +2167,30 @@ cmd_download_for() {
     # Download each missing package
     local pkg_file
     for pkg_file in ${download_list}; do
-        msg2 "Downloading ${pkg_file}"
-        make_temp
-        local dl_path="${tmp}"
-        wget -O "${dl_path}" "${repo_url}/${pkg_file}" \
-            || die "failed to download ${pkg_file} from ${repo_url}"
-
-        # Verify SHA256 against repodata
+        # Without the SHA256 that the repository index records for it, there
+        # would be nothing to verify the download against.
         local pkg_name="${pkg_file%.${arch}.xbps}"
         local pkg_name="${pkg_name%-*}"
         local pkg_name="$(printf '%s' "${pkg_name}" | sed 's/[.[\*^$\\]/\\&/g')"
         local expected_sha256="$(sed -n "/<key>${pkg_name}<\\/key>/,/<key>filename-sha256<\\/key>/{
             /<key>filename-sha256<\\/key>/{n;s/.*<string>\\(.*\\)<\\/string>.*/\\1/p;}
         }" "${index_plist}")"
+        if [[ -z ${expected_sha256} ]]; then
+            die "${pkg_file} is not in the repository index of ${repo_url}, so it cannot be verified"
+        fi
 
-        if [[ -n ${expected_sha256} ]]; then
-            local actual_sha256="$(sha256sum "${dl_path}")"
-            local actual_sha256="${actual_sha256%% *}"
-            if [[ ${actual_sha256} != "${expected_sha256}" ]]; then
-                die "SHA256 mismatch for ${pkg_file}:
+        msg2 "Downloading ${pkg_file}"
+        make_temp
+        local dl_path="${tmp}"
+        wget -O "${dl_path}" "${repo_url}/${pkg_file}" \
+            || die "failed to download ${pkg_file} from ${repo_url}"
+
+        local actual_sha256="$(sha256sum "${dl_path}")"
+        local actual_sha256="${actual_sha256%% *}"
+        if [[ ${actual_sha256} != "${expected_sha256}" ]]; then
+            die "SHA256 mismatch for ${pkg_file}:
   expected '${expected_sha256}'
   got      '${actual_sha256}'"
-            fi
         fi
 
         # mktemp made it private; built packages are not.
