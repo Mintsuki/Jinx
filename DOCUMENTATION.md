@@ -21,7 +21,7 @@ Links to different points in this documentation:
 	- [`download`](<#download>)
 	- [`run-in`](<#run-in>)
 	- [`rebuild-cache`](<#rebuild-cache>)
-- [Rebuild Behavior](<#rebuild-behavior>)
+- [Rebuild Behaviour](<#rebuild-behaviour>)
 - [Jinxfile](<#jinxfile>)
 - [Environment Variables](<#environment-variables>)
 - [Recipes](<#recipes>)
@@ -341,7 +341,7 @@ Useful for interactive debugging of build failures, running utilities against a 
 
 Purges and re-creates `.jinx-cache/`. This re-downloads XBPS, re-runs `debootstrap`, and rebuilds the base container image. Run this if the cache becomes corrupt; otherwise, Jinx automatically refreshes the cache when its version, the Debian snapshot, the base packages list, or the CMake platform file (its path or its contents) change.
 
-## Rebuild Behavior
+## Rebuild Behaviour
 
 Jinx identifies built packages purely by their XBPS filename, `<name>-<version>_<revision>.<arch>.xbps`. When this file is present in the build directory's `pkgs/`, the recipe is considered already built; when it is missing (because `version` was bumped, `revision` was bumped, or the file was deleted), Jinx rebuilds the recipe.
 
@@ -519,7 +519,7 @@ source_dir="test/"
 
 If a recipe sets **both** `source_dir` and [`git_url`](<#git_url>), Jinx treats it as a *managed clone*. This is intended for repositories maintained by the same people working on the distribution: Jinx clones the repository **once** into `source_dir`, then leaves it entirely alone and uses it exactly like a normal `source_dir` local package (in place, never patched, never auto-cleaned).
 
-The behavior is:
+The behaviour is:
 
 - On the first build, if `source_dir` does not yet exist, Jinx performs a **full** clone of `git_url` into it and checks out [`commit`](<#commit>) (which remains **required**, as the reproducible starting point). [`shallow`](<#shallow>) has no effect here - managed clones are always full clones so you have history to work with.
 - On every later build, an **existing** `source_dir` is used as-is. Jinx never re-clones it, never checks out `commit` again, never patches it, and never deletes it (neither `clean_sources` nor [`JINX_CLEAN_WORKDIRS`](<#environment-variables>) touch a local package's tree). It is your working tree to develop in - commit, branch, and push with `git` directly.
