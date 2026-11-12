@@ -1586,7 +1586,11 @@ do_regen() {
             mv $1-workdir/.git "${vc_dir_workdir}"
         fi
 
-        git diff --no-index --no-prefix $1-clean $1-workdir >"${patch_file}" || true
+        # The patch must not depend on anyone's Git configuration, including
+        # that of a repository the sources are in, which GIT_DIR keeps out.
+        GIT_DIR=/nonexistent GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+            git diff --no-index --no-prefix --no-color --no-ext-diff \
+            "$1-clean" "$1-workdir" >"${patch_file}" || true
 
         if [[ -n ${git_url} ]]; then
             mv "${vc_dir_clean}" $1-clean/.git
