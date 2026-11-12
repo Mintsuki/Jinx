@@ -1470,6 +1470,9 @@ jinx_clean_sources() {
     jinx_force_remove "${base_dir}"/${_sources_root}/$1.patched
     jinx_force_remove "${base_dir}"/${_sources_root}/$1.prepared
     jinx_force_remove "${base_dir}"/${_sources_root}/$1.revision
+    # What an interrupted regen left set aside.
+    jinx_force_remove "${base_dir}"/${_sources_root}/$1-clean.jinx-git
+    jinx_force_remove "${base_dir}"/${_sources_root}/$1-workdir.jinx-git
 }
 
 jinx_do_source() {
