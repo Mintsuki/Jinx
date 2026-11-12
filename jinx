@@ -1806,18 +1806,54 @@ do_pkg() {
     fi
 }
 
-cmd_build() {
-    local ppkg
-    for ppkg in "$@"; do
-        local pkg
-        if [[ ${ppkg} == host:* ]]; then
-            for pkg in $(cd "${base_dir}/host-recipes" && echo ${ppkg#host:}); do
-                tracked_subshell 'do_host_pkg "${pkg}"'
-            done
+# Prints the recipes that the names and globs given match, each once and in
+# order, host ones as 'host:<name>' as on the command line. A glob passes over
+# entries that are not recipes; an argument matching none is an error.
+expand_recipes() {
+    local -A seen=()
+    local arg ns glob prefix entry
+    for arg in "$@"; do
+        if [[ ${arg} == host:* ]]; then
+            ns=host-recipes
+            glob="${arg#host:}"
+            prefix=host:
         else
-            for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
-                tracked_subshell 'do_pkg "${pkg}"'
-            done
+            ns=recipes
+            glob="${arg}"
+            prefix=
+        fi
+
+        local -a hits=()
+        for entry in $(cd "${base_dir}/${ns}" 2>/dev/null && echo ${glob}); do
+            if [[ -f ${base_dir}/${ns}/${entry}/recipe ]]; then
+                hits+=("${prefix}${entry}")
+            fi
+        done
+        if (( ${#hits[@]} == 0 )); then
+            die "no recipe in ${ns}/ matches '${glob}'"
+        fi
+
+        for entry in "${hits[@]}"; do
+            if [[ -z ${seen[${entry}]+x} ]]; then
+                seen[${entry}]=1
+                echo "${entry}"
+            fi
+        done
+    done
+}
+
+cmd_build() {
+    if [[ -z ${1-} ]]; then
+        die "build requires at least one package name"
+    fi
+
+    local pkgs pkg
+    pkgs="$(expand_recipes "$@")"
+    for pkg in ${pkgs}; do
+        if [[ ${pkg} == host:* ]]; then
+            tracked_subshell 'do_host_pkg "${pkg#host:}"'
+        else
+            tracked_subshell 'do_pkg "${pkg}"'
         fi
     done
 }
@@ -1940,17 +1976,13 @@ cmd_update() {
         set -- '*'
     fi
 
-    local ppkg
-    for ppkg in "$@"; do
-        local pkg
-        if [[ ${ppkg} == host:* ]]; then
-            for pkg in $(cd "${base_dir}/host-recipes" && echo ${ppkg#host:}); do
-                tracked_subshell 'do_host_update "${with_build}" "${pkg}"'
-            done
+    local pkgs pkg
+    pkgs="$(expand_recipes "$@")"
+    for pkg in ${pkgs}; do
+        if [[ ${pkg} == host:* ]]; then
+            tracked_subshell 'do_host_update "${with_build}" "${pkg#host:}"'
         else
-            for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
-                tracked_subshell 'do_update "${with_build}" "${pkg}"'
-            done
+            tracked_subshell 'do_update "${with_build}" "${pkg}"'
         fi
     done
 }
@@ -1967,18 +1999,13 @@ cmd_dry_run() {
     fi
 
     local -a roots=()
-    local a hpkg pkg
-    for a in "$@"; do
-        if [[ ${a} == host:* ]]; then
-            local _hglob="${a#host:}"
-            for hpkg in $(cd "${base_dir}/host-recipes" && echo ${_hglob}); do
-                [[ -f "${base_dir}/host-recipes/${hpkg}/recipe" ]] || continue
-                roots+=("host/${hpkg}")
-            done
+    local pkgs pkg
+    pkgs="$(expand_recipes "$@")"
+    for pkg in ${pkgs}; do
+        if [[ ${pkg} == host:* ]]; then
+            roots+=("host/${pkg#host:}")
         else
-            for pkg in $(cd "${base_dir}/recipes" && echo ${a}); do
-                roots+=("${pkg}")
-            done
+            roots+=("${pkg}")
         fi
     done
 
@@ -2054,22 +2081,14 @@ cmd_dry_run() {
 }
 
 cmd_download_for() {
-    # Args: repo_url recipes_dir pkgs_dir arch glob1 [glob2 ...]
+    # Args: repo_url recipes_dir pkgs_dir arch name1 [name2 ...]
     local repo_url="$1"
     local recipes_dir="$2"
     local pkgs_dir="$3"
     local arch="$4"
     shift 4
 
-    # Expand package patterns
-    local all_packages=""
-    local ppkg
-    for ppkg in "$@"; do
-        local pkg
-        for pkg in $(cd "${base_dir}/${recipes_dir}" && echo ${ppkg}); do
-            local all_packages="${all_packages} ${pkg}"
-        done
-    done
+    local all_packages="$*"
 
     # Collect transitive deps. Nothing is built here, so the only edges that
     # matter are the ones xbps itself records in a binary package: deps and
@@ -2188,44 +2207,45 @@ cmd_download() {
 
     # Split host: targets from normal ones; each group is downloaded against
     # its own arch repodata, from its own repo URL, into its own pkgs/ tree.
-    local -a host_globs=() normal_args=()
-    local a
-    for a in "$@"; do
-        if [[ ${a} == host:* ]]; then
-            host_globs+=("${a#host:}")
+    local -a host_pkgs=() normal_pkgs=()
+    local pkgs pkg
+    pkgs="$(expand_recipes "$@")"
+    for pkg in ${pkgs}; do
+        if [[ ${pkg} == host:* ]]; then
+            host_pkgs+=("${pkg#host:}")
         else
-            normal_args+=("${a}")
+            normal_pkgs+=("${pkg}")
         fi
     done
 
-    if (( ${#normal_args[@]} > 0 )); then
+    if (( ${#normal_pkgs[@]} > 0 )); then
         if [[ -z ${JINX_REPO_URL-} ]]; then
             die "JINX_REPO_URL not set in Jinxfile"
         fi
-        cmd_download_for "${JINX_REPO_URL}" recipes "${build_dir}/pkgs" "${JINX_ARCH}" "${normal_args[@]}"
+        cmd_download_for "${JINX_REPO_URL}" recipes "${build_dir}/pkgs" "${JINX_ARCH}" "${normal_pkgs[@]}"
     fi
-    if (( ${#host_globs[@]} > 0 )); then
+    if (( ${#host_pkgs[@]} > 0 )); then
         if [[ -z ${JINX_HOST_REPO_URL-} ]]; then
             die "JINX_HOST_REPO_URL not set in Jinxfile (required for downloading host packages)"
         fi
-        cmd_download_for "${JINX_HOST_REPO_URL}" host-recipes "${build_dir}/host-pkgs" "${host_arch}" "${host_globs[@]}"
+        cmd_download_for "${JINX_HOST_REPO_URL}" host-recipes "${build_dir}/host-pkgs" "${host_arch}" "${host_pkgs[@]}"
     fi
 
     msg "Download complete"
 }
 
 cmd_regen() {
-    local ppkg
-    for ppkg in "$@"; do
-        local pkg
-        if [[ ${ppkg} == host:* ]]; then
-            for pkg in $(cd "${base_dir}/host-recipes" && echo ${ppkg#host:}); do
-                tracked_subshell 'do_regen "${pkg}" host-recipes'
-            done
+    if [[ -z ${1-} ]]; then
+        die "regen requires at least one package name"
+    fi
+
+    local pkgs pkg
+    pkgs="$(expand_recipes "$@")"
+    for pkg in ${pkgs}; do
+        if [[ ${pkg} == host:* ]]; then
+            tracked_subshell 'do_regen "${pkg#host:}" host-recipes'
         else
-            for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
-                tracked_subshell 'do_regen "${pkg}" recipes'
-            done
+            tracked_subshell 'do_regen "${pkg}" recipes'
         fi
     done
 }
@@ -2311,14 +2331,12 @@ cmd_run_in() {
         local recipes_dir=host-recipes
         local internal_cmd=internal-run-in-host
         local builds_dir=host-builds
-        local recipe_glob="${recipe_glob#host:}"
     fi
 
-    local run_in_recipe
-    for run_in_recipe in $(cd "${base_dir}/${recipes_dir}" && echo ${recipe_glob}); do
-        if [[ ! -f "${base_dir}/${recipes_dir}/${run_in_recipe}/recipe" ]]; then
-            die "recipe '${recipes_dir}/${run_in_recipe}' not found"
-        fi
+    local run_in_recipes run_in_recipe
+    run_in_recipes="$(expand_recipes "${recipe_glob}")"
+    for run_in_recipe in ${run_in_recipes}; do
+        local run_in_recipe="${run_in_recipe#host:}"
 
         eval "$(include_recipe "${base_dir}"/${recipes_dir}/${run_in_recipe})"
 
@@ -2366,17 +2384,17 @@ cmd_run_in() {
 }
 
 cmd_rebuild() {
-    local ppkg
-    for ppkg in "$@"; do
-        local pkg
-        if [[ ${ppkg} == host:* ]]; then
-            for pkg in $(cd "${base_dir}/host-recipes" && echo ${ppkg#host:}); do
-                tracked_subshell 'do_host_rebuild "${pkg}"'
-            done
+    if [[ -z ${1-} ]]; then
+        die "rebuild requires at least one package name"
+    fi
+
+    local pkgs pkg
+    pkgs="$(expand_recipes "$@")"
+    for pkg in ${pkgs}; do
+        if [[ ${pkg} == host:* ]]; then
+            tracked_subshell 'do_host_rebuild "${pkg#host:}"'
         else
-            for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
-                tracked_subshell 'do_rebuild "${pkg}"'
-            done
+            tracked_subshell 'do_rebuild "${pkg}"'
         fi
     done
 }
@@ -2481,23 +2499,16 @@ cmd_revbump() {
         done
     }
 
-    local ppkg
-    for ppkg in "$@"; do
-        local tns tglob
-        if [[ ${ppkg} == host:* ]]; then
-            local tns=host-recipes
-            local tglob="${ppkg#host:}"
+    local pkgs target
+    pkgs="$(expand_recipes "$@")"
+    for pkg in ${pkgs}; do
+        if [[ ${pkg} == host:* ]]; then
+            target="host-recipes/${pkg#host:}"
         else
-            local tns=recipes
-            local tglob="${ppkg}"
+            target="recipes/${pkg}"
         fi
-        for pkg in $(cd "${base_dir}/${tns}" && echo ${tglob}); do
-            if [[ ! -f "${base_dir}/${tns}/${pkg}/recipe" ]]; then
-                die "revbump: recipe '${tns}/${pkg}' not found"
-            fi
-            targets["${tns}/${pkg}"]=1
-            revbump_visit "${tns}/${pkg}"
-        done
+        targets["${target}"]=1
+        revbump_visit "${target}"
     done
 
     # A requested package is the changed input itself, never a bump target.
@@ -2550,18 +2561,24 @@ cmd_install() {
     shift 1
     mkdir -m 755 -p "${sysroot}"
 
-    local pkgs_to_install=""
-    local ppkg
-    for ppkg in "$@"; do
-        local pkg
-        for pkg in $(cd "${base_dir}/recipes" && echo ${ppkg}); do
-            local bootstrap_pkg=$(eval "$(include_recipe "${base_dir}"/recipes/${pkg})" && echo "${bootstrap_pkg}")
-            if [[ ${bootstrap_pkg} == yes ]]; then
-                continue
-            fi
+    if [[ -z ${1-} ]]; then
+        die "install requires at least one package name"
+    fi
 
-            local pkgs_to_install="${pkgs_to_install} ${pkg}"
-        done
+    local pkgs_to_install=""
+    local pkgs pkg
+    pkgs="$(expand_recipes "$@")"
+    for pkg in ${pkgs}; do
+        if [[ ${pkg} == host:* ]]; then
+            die "install only installs normal recipes, not '${pkg}'"
+        fi
+
+        local bootstrap_pkg=$(eval "$(include_recipe "${base_dir}"/recipes/${pkg})" && echo "${bootstrap_pkg}")
+        if [[ ${bootstrap_pkg} == yes ]]; then
+            continue
+        fi
+
+        local pkgs_to_install="${pkgs_to_install} ${pkg}"
     done
 
     local files_to_ignore='\.keep

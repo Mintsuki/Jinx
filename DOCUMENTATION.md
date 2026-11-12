@@ -190,7 +190,7 @@ example: jinx update '*'
 ```
 
 >[!tip]
->For all commands that take recipe names, an argument of `'*'` (or any shell glob) can be used in place of an explicit name; Jinx expands it against the relevant recipes directory. This is great for "full" distributions.
+>For all commands that take recipe names, an argument of `'*'` (or any shell glob) can be used in place of an explicit name; Jinx expands it against the relevant recipes directory, passing over any entry there that is not a recipe. This is great for "full" distributions. Each recipe is handled once however many arguments match it, and an argument that matches no recipe at all is an error.
 
 >[!tip]
 >For commands that operate on recipes ([`build`](<#build>), [`rebuild`](<#rebuild>), [`revbump`](<#revbump>), [`regenerate`](<#regenerate>), [`update`](<#update>), [`dry-run`](<#dry-run>), [`download`](<#download>), [`run-in`](<#run-in>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`. The `install` command, by contrast, only operates on normal recipes.
