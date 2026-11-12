@@ -2379,8 +2379,9 @@ cmd_rebuild() {
 }
 
 revbump_one_recipe() {
-    # Rewrite the first literal 'revision=' line, incrementing the integer and
-    # preserving indentation, quoting style and trailing whitespace.
+    # Write the recipe with its first literal 'revision=' line incremented,
+    # preserving indentation, quoting style and trailing whitespace, to the
+    # temporary file revbump_out, and its old revision to revbump_old.
     local recipe_file="$1"
     local label="$2"
 
@@ -2411,9 +2412,8 @@ revbump_one_recipe() {
         die "revbump: recipe '${label}' has ${count} literal 'revision=' line(s); expected exactly 1 (bump it manually)"
     fi
 
-    mv "${out}" "${recipe_file}"
-
-    msg2 "${label}: revision ${old_rev} -> $((old_rev + 1))"
+    revbump_out="${out}"
+    revbump_old="${old_rev}"
 }
 
 cmd_revbump() {
@@ -2491,17 +2491,28 @@ cmd_revbump() {
     done
 
     # A requested package is the changed input itself, never a bump target.
+    # No recipe is written before all of them are known to be bumpable, or
+    # running again after a failure would bump some of them twice.
     local node
-    local bumped_any=no
+    local -a bump_nodes=() bump_outs=() bump_olds=()
     for node in $(printf '%s\n' "${!to_bump[@]}" | sort); do
         [[ -n ${targets[$node]+x} ]] && continue
         revbump_one_recipe "${base_dir}/${node}/recipe" "${node}"
-        local bumped_any=yes
+        bump_nodes+=("${node}")
+        bump_outs+=("${revbump_out}")
+        bump_olds+=("${revbump_old}")
     done
 
-    if [[ ${bumped_any} == no ]]; then
+    if (( ${#bump_nodes[@]} == 0 )); then
         msg "No dependents found for: $*"
+        return
     fi
+
+    local i
+    for i in "${!bump_nodes[@]}"; do
+        mv "${bump_outs[i]}" "${base_dir}/${bump_nodes[i]}/recipe"
+        msg2 "${bump_nodes[i]}: revision ${bump_olds[i]} -> $((bump_olds[i] + 1))"
+    done
 }
 
 pkg_file_list() {
