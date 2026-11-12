@@ -427,6 +427,10 @@ if [[ ${name} != ${_expected_name} ]]; then
     die "recipe at '${recipe_dir}' must not override 'name' (recipe sets '${name}' but directory is '${_expected_name}'); remove the 'name=' assignment from the recipe"
 fi
 
+if [[ -n ${cross_compile} && ${cross_compile} != yes ]]; then
+    die "recipe '${name}' sets cross_compile to '${cross_compile}'; it must be 'yes' or unset"
+fi
+
 if [[ -n ${tarball_url} && -n ${git_url} ]]; then
     die "recipe '${name}' sets both tarball_url and git_url (mutually exclusive source methods)"
 fi

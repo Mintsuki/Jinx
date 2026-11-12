@@ -918,8 +918,7 @@ When [`JINX_NATIVE_MODE=yes`](<#environment-variables>) is set, Jinx normally bu
 
 Has no effect when `JINX_NATIVE_MODE` is not set. Host recipes and the source-preparation stages always use the cross-compile flow anyway.
 
->[!warning]
->Set this to `yes` or leave it out entirely; `cross_compile=no` is *not* the same as leaving it unset. Container setup only tests whether the property is non-empty, so `no` selects the cross-compile flow there while the rest of the run still treats the recipe as native - leaving the build container without its sysroot and without its host packages.
+Any value other than `yes` is an error: to keep a recipe native, leave `cross_compile` unset.
 
 Example:
 
