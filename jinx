@@ -2374,6 +2374,10 @@ do_run_in() {
 
     cd "${build_dir}"/builds/${name}
 
+    # Unlike the shell that runs it, a command such as sh -c only sees the
+    # variables that are exported.
+    export name recipe_dir source_dir prefix sysroot parallelism base_dir build_dir JINX_ARCH
+
     set --
     . "${cmd_file}"
 }
@@ -2405,6 +2409,10 @@ do_run_in_host() {
     local sysroot="/sysroot"
 
     cd "${build_dir}"/host-builds/${name}
+
+    # Unlike the shell that runs it, a command such as sh -c only sees the
+    # variables that are exported.
+    export name recipe_dir source_dir prefix sysroot parallelism base_dir build_dir JINX_ARCH
 
     set --
     . "${cmd_file}"

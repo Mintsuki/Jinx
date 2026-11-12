@@ -335,6 +335,8 @@ Prepares a container as if it were going to build `<recipe>` (sysroot populated 
 
 The recipe's sources are fetched, patched and prepared first if that has not happened yet, and the build directory is created if it is missing, so `run-in` works on a recipe that has never been built. The recipe argument is glob-expanded like everywhere else, in which case the command is run once per match.
 
+The command sees the [provided variables](<#provided-variables>) other than `dest_dir` as environment variables, so that, for example, `jinx run-in foo sh -c 'ls "$sysroot$prefix/lib"'` lists the libraries in the sysroot.
+
 Useful for interactive debugging of build failures, running utilities against a populated sysroot, or one-off tasks inside the same environment a recipe sees.
 
 #### `rebuild-cache`
