@@ -328,7 +328,7 @@ Errors out if `JINX_REPO_URL` is not set when normal packages are requested, or 
 jinx run-in <recipe> <command> [args...]
 ```
 
-Prepares a container as if it were going to build `<recipe>` (sysroot populated with `deps`, host packages from `hostdeps`/`hostrundeps`, Debian packages from `imagedeps`), then runs the given command inside it from the recipe's build directory. Network access is enabled. Accepts the `host:` prefix (e.g. `jinx run-in host:gcc bash`) to drop into a host recipe's container instead - the recipe is looked up in `host-recipes/` and the command runs from `host-builds/<name>/`, always through the cross-compile flow.
+Prepares a container as if it were going to build `<recipe>` (sysroot populated with `deps` and `builddeps`, host packages from `hostdeps`/`hostrundeps`, Debian packages from `imagedeps` and the host packages' `imagerundeps`), then runs the given command inside it from the recipe's build directory. Network access is enabled. Accepts the `host:` prefix (e.g. `jinx run-in host:gcc bash`) to drop into a host recipe's container instead - the recipe is looked up in `host-recipes/` and the command runs from `host-builds/<name>/`, always through the cross-compile flow.
 
 The recipe's sources are fetched, patched and prepared first if that has not happened yet, and the build directory is created if it is missing, so `run-in` works on a recipe that has never been built. The recipe argument is glob-expanded like everywhere else, in which case the command is run once per match.
 
