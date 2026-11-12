@@ -738,7 +738,7 @@ commit="28257019ce04f784337cb9c3125abb4d02cef14d"
 - **Optional**.
 - `yes`/`no`. Default: `yes`.
 
-Controls whether [`git_url`](<#git_url>) clones are shallow. By default, Jinx performs a shallow `--revision=<commit> --depth=1` clone of the requested commit. Set `shallow=no` to perform a full clone instead, which is useful when the recipe's `prepare()` or `build()` needs git history (e.g. `git describe` for version stamping). Has no effect in [managed-clone mode](<#source_dir>), which always performs a full clone.
+Controls whether [`git_url`](<#git_url>) clones are shallow. By default, Jinx performs a shallow `--revision=<commit> --depth=1` clone of the requested commit, which needs Git 2.49 or later in the build image: a [`JINX_DEBIAN_SNAPSHOT`](<#jinxfile>) from mid-2025 on (with an older one, set `shallow=no`). Set `shallow=no` to perform a full clone instead, which is useful when the recipe's `prepare()` or `build()` needs git history (e.g. `git describe` for version stamping). Has no effect in [managed-clone mode](<#source_dir>), which always performs a full clone.
 
 Example:
 
