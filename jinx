@@ -324,12 +324,18 @@ if [[ ! -d "$(dirname "$JINX_CACHE_DIR")" ]]; then
 fi
 
 if [[ ${in_container} == false ]]; then
+    # Whatever root creates here, the user who builds could not change later.
+    if [[ $(id -u) == 0 && ! -d ${JINX_CACHE_DIR} ]]; then
+        die "there is no Jinx cache yet; run any jinx command as the user who builds the packages first"
+    fi
     mkdir -p "$JINX_CACHE_DIR"
     JINX_CACHE_DIR="$(cd "$JINX_CACHE_DIR" && pwd -P)"
 
     export PATH="${JINX_CACHE_DIR}/bin:${JINX_CACHE_DIR}/xbps/bin:${JINX_CACHE_DIR}/debootstrap/usr/sbin:${PATH}:/usr/sbin:/sbin"
 
-    mkdir -p "${base_dir}/sources" "${base_dir}/host-sources" "${build_dir}/host-builds" "${build_dir}/host-pkgs" "${build_dir}/builds" "${build_dir}/pkgs"
+    if [[ $(id -u) != 0 ]]; then
+        mkdir -p "${base_dir}/sources" "${base_dir}/host-sources" "${build_dir}/host-builds" "${build_dir}/host-pkgs" "${build_dir}/builds" "${build_dir}/pkgs"
+    fi
 
     # flock needs no write access, so hold the lock on a read-only
     # descriptor: a lock file left behind by a run as root ('install' is
@@ -2818,6 +2824,33 @@ redo_first_use() {
     first_use
 }
 
+# A cache that root rebuilt would lock its owner out of it, so as root, have the
+# user owning the cache directory rebuild it.
+rebuild_cache_as_owner() {
+    local owner
+    owner="$(stat -c '%u:%g' "${JINX_CACHE_DIR}")"
+    if [[ ${owner%%:*} == 0 ]]; then
+        die "the Jinx cache needs to be rebuilt, which must not happen as root; run any jinx command as the user who builds the packages first"
+    fi
+
+    # The rebuild takes the lock itself, for as long as it runs. Perl drops the
+    # privileges, as busybox's setpriv cannot change users and debootstrap
+    # needs perl anyway.
+    exec 9<&-
+    perl -e '
+        my ($uid, $gid) = (shift, shift);
+        $) = "$gid $gid";
+        $( = $gid;
+        ($<, $>) = ($uid, $uid);
+        die "jinx: could not drop root privileges\n" if $< != $uid || $> != $uid;
+        exec { $ARGV[0] } @ARGV or die "jinx: cannot run $ARGV[0]: $!\n";
+    ' "${owner%%:*}" "${owner#*:}" "${script}" rebuild-cache
+    exec 9<"${JINX_CACHE_DIR}/jinx.lock"
+    if ! flock -n 9; then
+        die "another jinx started while the cache was being rebuilt"
+    fi
+}
+
 if [[ ! -f $JINX_CONFIG_FILE ]]; then
     die "missing Jinxfile in directory '$base_dir'"
 fi
@@ -2852,7 +2885,11 @@ if [[ ${in_container} == false ]]; then
     if  [[ ! -f "${JINX_CACHE_DIR}/version" || $(cat "${JINX_CACHE_DIR}/version") != "${jinx_version}" ]] \
      || [[ ! -f "${JINX_CACHE_DIR}/debian_snapshot" || $(cat "${JINX_CACHE_DIR}/debian_snapshot") != "${JINX_DEBIAN_SNAPSHOT}" ]] \
      || [[ ! -f "${JINX_CACHE_DIR}/base_packages" || $(cat "${JINX_CACHE_DIR}/base_packages") != "${JINX_BASE_PACKAGES-}" ]]; then
-        redo_first_use
+        if [[ $(id -u) == 0 ]]; then
+            rebuild_cache_as_owner
+        else
+            redo_first_use
+        fi
     fi
 fi
 

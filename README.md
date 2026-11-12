@@ -17,7 +17,7 @@ An example OS using Jinx is [Gloire](https://codeberg.org/Ironclad/Gloire).
 - git
 - grep
 - gzip
-- perl (needed by `debootstrap`)
+- perl (needed by `debootstrap`, and to drop root privileges)
 - sed
 - tar
 - wget

@@ -84,7 +84,7 @@ Ensure the following prerequisites have been acquired:
 - `free` from a `procps` package, or equivalent.
 - `unshare`, `flock` and `mount` from a `util-linux` package, or equivalent.
 
-`perl` and `xzcat` are not used by Jinx itself: they are what the `debootstrap` Jinx installs on its first run needs in order to resolve and decompress the `.deb`s of the base container image. It unpacks them with `ar`, but Jinx ships a stand-in for the two flags it uses and pins `debootstrap` to that, so `binutils` is not needed.
+`perl` and `xzcat` are what the `debootstrap` Jinx installs on its first run needs in order to resolve and decompress the `.deb`s of the base container image; Jinx itself only uses `perl` to drop root privileges when `install`, run as root, has to rebuild the cache. It unpacks them with `ar`, but Jinx ships a stand-in for the two flags it uses and pins `debootstrap` to that, so `binutils` is not needed.
 
 >[!warning]
 >It is ***imperative*** that Jinx be run under Linux, as the container environment relies on non-POSIX Linux features (user namespaces, mount namespaces, `chroot`). You ***will*** run into issues on other systems.
@@ -285,7 +285,7 @@ Installs the specified package(s) into the given system root directory. Each pac
 The `-f` flag **forces** the installation, removing any pre-existing version of the package from the sysroot beforehand. After installation, Jinx checks for file conflicts between the installed packages; if any duplicate paths are detected, it lists them and exits with an error.
 
 >[!note]
->`install` is the only command allowed to run as root, since populating a sysroot may require root privileges depending on file ownership/permissions.
+>`install` is the only command allowed to run as root, since populating a sysroot may require root privileges depending on file ownership/permissions. Should the cache need rebuilding at that point (after a Jinx upgrade, say), the rebuild runs as the user who owns the cache directory, so that the cache stays theirs; without a cache at all, run any command as that user first.
 
 >[!warning]
 >The `install` command requires a "sysroot" directory as the first positional argument before the package list. Example: `jinx install sysroot/ base`.
