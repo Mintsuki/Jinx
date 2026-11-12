@@ -1220,7 +1220,8 @@ do_patch() {
         apply_patch "${_patches_dir}/jinx-working-patch.patch"
     fi
 
-    cp -rp "${source_dir}" "${base_dir}"/${_sources_root}/${name}-workdir
+    force_remove "${base_dir}/${_sources_root}/${name}-workdir"
+    cp -rp "${source_dir}" "${base_dir}/${_sources_root}/${name}-workdir"
 
     cd "${base_dir}"
 }
