@@ -646,10 +646,51 @@ get_builddeps() {
         fi
 
         local graph="${graph}
-${dep}:$(eval "$(include_recipe "${base_dir}/recipes/${dep}")" && echo ${deps})"
+${dep}:$(eval "$(recipe_info recipes "${dep}")" && echo ${deps})"
     done
 
     topo_sort "${graph}"
+}
+
+# Prints the assignments of what most commands look up in recipe $2 from $1
+# (recipes or host-recipes): its version (that of its source's recipe, if it
+# uses from_source), revision, dependencies, and source-level dependencies
+# (from its source's recipe too). Evaluating a recipe takes long enough to be
+# worth doing only once per run.
+recipe_info() {
+    local cached="${recipe_info_cache-}/$1/$2"
+    if [[ -n ${recipe_info_cache-} && -f ${cached} ]]; then
+        cat "${cached}"
+        return
+    fi
+
+    local info
+    if ! info="$(
+        eval "$(include_recipe "${base_dir}/$1/$2")"
+        if [[ -n ${from_source} ]]; then
+            local src
+            src="$(eval "$(include_recipe "${base_dir}/${_from_source_dir}/${from_source}")" \
+                && printf 'version=%q source_deps=%q source_hostdeps=%q\n' \
+                    "${version}" "${source_deps}" "${source_hostdeps}")" || exit 1
+            eval "${src}"
+        fi
+        local var
+        for var in version revision from_source _from_source_dir deps builddeps \
+                   hostdeps hostrundeps binpkgdeps imagerundeps bootstrap_pkg \
+                   source_deps source_hostdeps; do
+            printf 'local %s=%q\n' "${var}" "${!var}"
+        done
+    )"; then
+        # Whatever went wrong has been reported; the caller's eval stops here.
+        echo "exit 1"
+        return
+    fi
+
+    if [[ -n ${recipe_info_cache-} ]]; then
+        mkdir -p "${recipe_info_cache}/$1"
+        printf '%s\n' "${info}" >"${cached}"
+    fi
+    printf '%s\n' "${info}"
 }
 
 get_source_deps() {
@@ -658,12 +699,7 @@ get_source_deps() {
     # owning the source; source_hostdeps always resolve in host-recipes/ and
     # source_deps in recipes/, whichever namespace the source recipe lives in.
     (
-        eval "$(include_recipe "${base_dir}/$2/$1")"
-
-        if [[ -n ${from_source} ]]; then
-            eval "$(include_recipe "${base_dir}/${_from_source_dir}/${from_source}")"
-        fi
-
+        eval "$(recipe_info "$2" "$1")"
         echo "${source_hostdeps}|${source_deps}"
     )
 }
@@ -771,7 +807,7 @@ prepare_container() {
 
     local _bpd_of _bpd
     for _bpd_of in "${!_deps_collected[@]}"; do
-        for _bpd in $(eval "$(include_recipe "${base_dir}/recipes/${_bpd_of}")" && echo "${binpkgdeps}"); do
+        for _bpd in $(eval "$(recipe_info recipes "${_bpd_of}")" && echo "${binpkgdeps}"); do
             [[ -n ${_deps_collected[$_bpd]+x} ]] && continue
             [[ ${_bpd} == "${name}" ]] && continue
             tracked_subshell '
@@ -826,7 +862,7 @@ prepare_container() {
                 ;;
         esac
         for hostdep in "${!_hostdeps_collected[@]}"; do
-            for _imagerundep in $(eval "$(include_recipe "${base_dir}/host-recipes/${hostdep}")" && echo "${imagerundeps}"); do
+            for _imagerundep in $(eval "$(recipe_info host-recipes "${hostdep}")" && echo "${imagerundeps}"); do
                 imagedeps="${imagedeps} ${_imagerundep}"
             done
         done
@@ -1569,14 +1605,11 @@ do_regen() {
 # Prints the path of the package that recipe $2 from $1 (recipes or
 # host-recipes) builds.
 pkg_file() {
-    eval "$(include_recipe "${base_dir}/$1/$2")"
-    if [[ -n ${from_source} ]]; then
-        version="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "${version}")"
-    fi
+    eval "$(recipe_info "$1" "$2")"
     if [[ $1 == host-recipes ]]; then
-        echo "${build_dir}/host-pkgs/${name}-${version}_${revision}.${host_arch}.xbps"
+        echo "${build_dir}/host-pkgs/$2-${version}_${revision}.${host_arch}.xbps"
     else
-        echo "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps"
+        echo "${build_dir}/pkgs/$2-${version}_${revision}.${JINX_ARCH}.xbps"
     fi
 }
 
@@ -1656,7 +1689,7 @@ do_pkg() {
     else
         local dep _dep_bootstrap
         for dep in ${deps}; do
-            _dep_bootstrap=$(eval "$(include_recipe "${base_dir}"/recipes/${dep})" && echo "${bootstrap_pkg}")
+            _dep_bootstrap=$(eval "$(recipe_info recipes "${dep}")" && echo "${bootstrap_pkg}")
             if [[ ${_dep_bootstrap} == yes ]]; then
                 continue
             fi
@@ -1676,7 +1709,7 @@ do_pkg() {
                 fi
             done
 
-            _dep_bootstrap=$(eval "$(include_recipe "${base_dir}"/recipes/${binpkgdep})" && echo "${bootstrap_pkg}")
+            _dep_bootstrap=$(eval "$(recipe_info recipes "${binpkgdep}")" && echo "${bootstrap_pkg}")
             if [[ ${_dep_bootstrap} == yes ]]; then
                 continue
             fi
@@ -1974,7 +2007,7 @@ closure_of() {
         fi
 
         local pair srcpair
-        pair=$(eval "$(include_recipe "${base_dir}/${nsdir}/${rpkg}")" \
+        pair=$(eval "$(recipe_info "${nsdir}" "${rpkg}")" \
             && echo "${hostdeps} ${hostrundeps}|${deps} ${builddeps}")
         srcpair=$(get_source_deps "${rpkg}" "${nsdir}")
 
@@ -2068,10 +2101,10 @@ cmd_download_for() {
         [[ -n ${pkg_deps[$1]+x} ]] && return
         local info
         if [[ ${recipes_dir} == recipes ]]; then
-            info=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/$1")" \
+            info=$(eval "$(recipe_info "${recipes_dir}" "$1")" \
                 && echo "${bootstrap_pkg}|${deps} ${binpkgdeps}")
         else
-            info=$(eval "$(include_recipe "${base_dir}/${recipes_dir}/$1")" \
+            info=$(eval "$(recipe_info "${recipes_dir}" "$1")" \
                 && echo "|${hostrundeps}")
         fi
         bootstrap[$1]="${info%%|*}"
@@ -2366,7 +2399,7 @@ cmd_revbump() {
             local node="${nsdir}/${pkg}"
 
             local depinfo
-            depinfo="$(eval "$(include_recipe "${base_dir}/${nsdir}/${pkg}")" \
+            depinfo="$(eval "$(recipe_info "${nsdir}" "${pkg}")" \
                 && printf '%s\n%s\n%s\n' "${deps} ${builddeps}" "${hostdeps} ${hostrundeps}" \
                     "${from_source:+${_from_source_dir}/${from_source}}")"
             local -a depinfo_lines
@@ -2485,7 +2518,7 @@ cmd_install() {
         fi
 
         local bootstrap_pkg
-        bootstrap_pkg=$(eval "$(include_recipe "${base_dir}"/recipes/${pkg})" && echo "${bootstrap_pkg}")
+        bootstrap_pkg=$(eval "$(recipe_info recipes "${pkg}")" && echo "${bootstrap_pkg}")
         if [[ ${bootstrap_pkg} == yes ]]; then
             continue
         fi
@@ -2871,6 +2904,9 @@ if [[ ${in_container} == false && $1 != rebuild-cache ]]; then
             redo_first_use
         fi
     fi
+
+    make_temp -d
+    recipe_info_cache="${tmp}"
 fi
 
 case "$1" in
