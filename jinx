@@ -336,7 +336,10 @@ fi
 apt_cache="$JINX_CACHE_DIR/apt-cache"
 
 force_remove() {
-    chmod -R 777 "$@" 2>/dev/null || true
+    rm -rf "$@" 2>/dev/null && return
+    # Only a directory without write or search permission can block deletion,
+    # and directories, unlike the files of image sets, are never hard-linked.
+    find "$@" -type d ! -perm -700 -exec chmod u+rwx {} + 2>/dev/null || true
     rm -rf "$@"
 }
 
