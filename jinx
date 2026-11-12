@@ -1475,7 +1475,7 @@ do_source() {
 
 # Builds the package of recipe $2 from $1 (recipes or host-recipes) anew.
 do_rebuild() {
-    force_remove "${build_dir}/${1%recipes}builds/$2"
+    force_remove "${build_dir}/${1%recipes}builds/$2" "${build_dir}/${1%recipes}builds/$2.configured"
 
     do_pkg "$1" "$2"
 }
@@ -1602,8 +1602,17 @@ do_pkg() {
 
     local _pkg
     _pkg="$(pkg_file "${_recipes_dir}" "${name}")"
-    if [[ ! -f ${_pkg} ]]; then
-        force_remove "${build_dir}/${_kind}builds/${name}"
+
+    # A build directory that configure() finished setting up for this version
+    # and revision is kept, so that a build that failed later on resumes where
+    # it stopped. Any other gets set up anew.
+    local _builds="${build_dir}/${_kind}builds/${name}"
+    local _configured=no
+    if [[ -d ${_builds} && -f ${_builds}.configured \
+          && $(cat "${_builds}.configured") == "${version}_${revision}" ]]; then
+        _configured=yes
+    else
+        force_remove "${_builds}" "${_builds}.configured"
     fi
 
     if [[ -n ${from_source} ]]; then
@@ -1622,9 +1631,10 @@ do_pkg() {
     prepare_container
 
     local container_sources_ro=yes
-    if [[ ! -d "${build_dir}/${_kind}builds/${name}" ]]; then
+    if [[ ${_configured} == no ]]; then
         msg2 "Running configure()"
         run_in_container internal-stage "${_recipes_dir}" configure "${name}"
+        echo "${version}_${revision}" >"${_builds}.configured"
     fi
     msg2 "Running build()"
     run_in_container internal-stage "${_recipes_dir}" build "${name}"
@@ -1696,7 +1706,7 @@ do_pkg() {
 
     if [[ ${JINX_CLEAN_WORKDIRS} == yes ]]; then
         if [[ ${clean_workdirs} != no ]]; then
-            force_remove "${build_dir}/${_kind}builds/${name}"
+            force_remove "${_builds}" "${_builds}.configured"
 
             # Only the recipe that owns a source may reap it; a from_source
             # recipe borrows a tree the owner and other borrowers still need.

@@ -250,7 +250,7 @@ If invoked with no recipe arguments (other than `-b`), behaves as `update [-b] '
 
 Followed by as many arguments as recipes to build. By default each argument refers to a normal recipe in `recipes/`; prefix a name with `host:` (e.g. `host:gcc`) to refer to a host recipe in `host-recipes/`. `build` will *not* attempt to build host recipes unless they are specified explicitly with `host:` or pulled in as a dependency of a to-be-built recipe.
 
-Builds are **incremental**: the recipe's build directory is preserved across invocations whenever a matching XBPS package file already exists, so `make` (or whichever build tool the recipe uses) can do its own incremental work. Unlike [`update`](<#update>), `build` will re-invoke the recipe's `build()` and `package()` functions even when nothing has changed.
+Builds are **incremental**: the recipe's build directory is kept for as long as [`configure()`](<#configure>) set it up for the recipe's current `version` and `revision`, so `make` (or whichever build tool the recipe uses) can do its own incremental work, and a build that failed in `build()` or `package()` resumes where it stopped. Unlike [`update`](<#update>), `build` will re-invoke the recipe's `build()` and `package()` functions even when nothing has changed.
 
 #### `rebuild`
 
@@ -350,7 +350,7 @@ Jinx identifies built packages purely by their XBPS filename, `<name>-<version>_
 
 A recipe is rebuilt under any of these conditions:
 
-1. You explicitly run [`build`](<#build>) or [`rebuild`](<#rebuild>) on it. `build` always re-runs the recipe's `build()` + `package()` stages (skipping `configure()` if the build directory still exists from a previous run); `rebuild` additionally removes the build directory first so `configure()` reruns from scratch.
+1. You explicitly run [`build`](<#build>) or [`rebuild`](<#rebuild>) on it. `build` always re-runs the recipe's `build()` + `package()` stages (skipping `configure()` if it already set the build directory up for the recipe's current `version` and `revision`); `rebuild` additionally removes the build directory first so `configure()` reruns from scratch.
 2. You run [`update`](<#update>) (or `update '*'`) and the recipe's current `name-version_revision.xbps` is missing.
 3. The recipe's `version` or `revision` changed since it was last built. The expected XBPS filename no longer matches any existing artifact, so the file appears "missing" - `update` will then rebuild it. If the recipe owns its source, the source's `.version` or `.revision` stamp no longer matches either, so the next build of any recipe sharing the source fetches, patches and prepares it afresh. Host recipes behave identically, with the `host-pkgs/<name>-<version>_<revision>.<host-arch>.xbps` filename and the stamps in `host-sources/`.
 
@@ -1106,7 +1106,7 @@ prepare() {
 
 #### `configure()`
 
-Following the [`prepare()`](<#prepare>) stage, `configure()` is intended for getting the sources ready for building. As the name suggests, the `configure()` stage is most suited to projects that require a `./configure` invocation before builds. This stage runs only when the recipe's build directory does not yet exist: on the first build, after [`rebuild`](<#rebuild>), after a `version` or `revision` bump (which causes the next build command to wipe the build directory before re-running), or after `JINX_CLEAN_WORKDIRS=yes` cleared it at the end of the previous build.
+Following the [`prepare()`](<#prepare>) stage, `configure()` is intended for getting the sources ready for building. As the name suggests, the `configure()` stage is most suited to projects that require a `./configure` invocation before builds. This stage runs, in a fresh build directory, unless it already set the recipe's build directory up for the recipe's current `version` and `revision`: so on the first build, after [`rebuild`](<#rebuild>), after a `version` or `revision` bump, after a `configure()` that failed, or after `JINX_CLEAN_WORKDIRS=yes` cleared the build directory at the end of the previous build. Jinx records a `configure()` that succeeded in `builds/<name>.configured` (`host-builds/<name>.configured` for host recipes).
 
 Example:
 
