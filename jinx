@@ -1170,53 +1170,54 @@ do_fetch() {
     fi
 }
 
+# Patched files get their old modification times back, or they would look newer
+# than what was generated from them (such as configure from configure.ac), and
+# the build would try to generate it again.
+apply_patch() {
+    make_temp -d
+    local scratch="${tmp}"
+
+    local -a files=()
+    local f
+    # Each "+++ b/name<tab>date" line names a file that the patch changes.
+    while IFS= read -r f; do
+        f="${f%%$'\t'*}"
+        if [[ -f ${f} ]]; then
+            touch -r "${f}" "${scratch}/${#files[@]}"
+            files+=("${f}")
+        fi
+    done < <(sed -n 's|^+++ [^/]*/||p' "$1")
+
+    patch --no-backup-if-mismatch -p1 -r "${scratch}/rejects" <"$1"
+
+    local i
+    for i in "${!files[@]}"; do
+        if [[ -f ${files[i]} ]]; then
+            touch -r "${scratch}/${i}" "${files[i]}"
+        fi
+    done
+}
+
 do_patch() {
     eval "$(source_source_recipe "$1" "$2")"
 
     eval "$(get_real_source_dir)"
 
-    make_temp
-    local patch_trash="${tmp}"
-
     cd "${source_dir}"
 
     local _patches_dir="${base_dir}/${_from_source_dir}/${name}/patches"
-    local needs_match_timestamps=no
-    force_remove "${base_dir}/${_sources_root}/${name}-clean"
-    if [[ -d ${_patches_dir} ]]; then
-        local patch
-        for patch in "${_patches_dir}"/*; do
-            [[ ${patch} == "${_patches_dir}/*" ]] && break
-            [[ ${patch} == "${_patches_dir}/jinx-working-patch.patch" ]] && continue
-
-            if [[ ! -d "${base_dir}/${_sources_root}/${name}-clean" ]]; then
-                cp -rp "${source_dir}" "${base_dir}/${_sources_root}/${name}-clean"
-                local needs_match_timestamps=yes
-            fi
-
-            patch --no-backup-if-mismatch -p1 -r "${patch_trash}" < "${patch}"
-        done
-
-        if [[ ${needs_match_timestamps} == yes ]]; then
-            # make sure timestamps match
-            local f
-            for f in $(diff -rq --no-dereference "${base_dir}/${_sources_root}/${name}-clean" "${source_dir}" | sed '/^Only in/d;s/^Files //g;s/ and.*$//g'); do
-                touch --reference="$f" "${f//${_sources_root}\/${name}-clean/${_sources_root}\/${name}}"
-            done
-            force_remove "${base_dir}/${_sources_root}/${name}-clean"
+    local patch
+    for patch in "${_patches_dir}"/*; do
+        if [[ -f ${patch} && ${patch##*/} != jinx-working-patch.patch ]]; then
+            apply_patch "${patch}"
         fi
-    fi
+    done
 
+    force_remove "${base_dir}/${_sources_root}/${name}-clean"
     cp -rp "${source_dir}" "${base_dir}/${_sources_root}/${name}-clean"
 
-    if [[ -f "${_patches_dir}/jinx-working-patch.patch" ]]; then
-        patch --no-backup-if-mismatch -p1 -r "${patch_trash}" < "${_patches_dir}/jinx-working-patch.patch"
-
-        # make sure timestamps match
-        local f
-        for f in $(diff -rq --no-dereference "${base_dir}"/${_sources_root}/${name}-clean "${source_dir}" | sed '/^Only in/d;s/^Files //g;s/ and.*$//g'); do
-            touch --reference="$f" "${f//${_sources_root}\/${name}-clean/${_sources_root}\/${name}}"
-        done
+    if [[ -f ${_patches_dir}/jinx-working-patch.patch ]]; then
+        apply_patch "${_patches_dir}/jinx-working-patch.patch"
     fi
 
     cp -rp "${source_dir}" "${base_dir}"/${_sources_root}/${name}-workdir
