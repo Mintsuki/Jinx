@@ -277,7 +277,7 @@ if [[ ${in_container} == false ]]; then
     mkdir -p "${base_dir}/sources" "${base_dir}/host-sources" "${build_dir}/host-builds" "${build_dir}/host-pkgs" "${build_dir}/builds" "${build_dir}/pkgs"
 
     case "$1" in
-        dry-run|version|--version|help|--help|init)
+        dry-run)
             ;;
         *)
             # flock needs no write access, so hold the lock on a read-only
