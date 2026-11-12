@@ -179,15 +179,18 @@ cmd_init() {
     if [[ -f "${dir}/Jinxfile" ]]; then
         # <dir> is the source directory; the current directory is the build directory.
         local srcdir="${dir}"
-        local builddir="$(pwd -P)"
+        local builddir
+        builddir="$(pwd -P)"
     elif [[ -f Jinxfile ]]; then
         # The current directory is the source; <dir> is a build directory to create.
         if [[ -e "${dir}" ]]; then
             die "'${dir}' already exists; when the current directory is the source, <dir> must be a new directory to create as the build directory"
         fi
-        local srcdir="$(pwd -P)"
+        local srcdir
+        srcdir="$(pwd -P)"
         mkdir -p "${dir}"
-        local builddir="$(cd "${dir}" && pwd -P)"
+        local builddir
+        builddir="$(cd "${dir}" && pwd -P)"
     else
         die "could not find a Jinxfile in '${dir}' or in the current directory"
     fi
@@ -280,9 +283,12 @@ compute_parallelism() {
         return
     fi
 
-    local max_threads_by_mem=$(( ((($(LC_ALL=C free | awk '/^Mem:/{print $7}') + 1048575) / 1048576) + 1) / 2 ))
-    local threads="$(nproc 2>/dev/null || echo 1)"
-    local threads=$(( threads < max_threads_by_mem ? threads : max_threads_by_mem ))
+    local mem_available
+    mem_available="$(LC_ALL=C free | awk '/^Mem:/{print $7}')"
+    local max_threads_by_mem=$(( (((mem_available + 1048575) / 1048576) + 1) / 2 ))
+    local threads
+    threads="$(nproc 2>/dev/null || echo 1)"
+    threads=$(( threads < max_threads_by_mem ? threads : max_threads_by_mem ))
 
     echo $(( threads > 0 ? threads : 1 ))
 }
@@ -905,8 +911,10 @@ run_in_container() {
     if [[ ($JINX_NATIVE_MODE == yes && $cross_compile == yes) || $JINX_NATIVE_MODE != yes ]]; then
         mkdir -p "${imgroot}/sysroot"
 
-        local container_pkgs_native_mount="$(bind_mount_cmd "${container_pkgs}" "${imgroot}/usr/local" ro)"
-        local sysroot_native_mount="$(bind_mount_cmd "${sysroot}" "${imgroot}/sysroot" ro)"
+        local container_pkgs_native_mount
+        container_pkgs_native_mount="$(bind_mount_cmd "${container_pkgs}" "${imgroot}/usr/local" ro)"
+        local sysroot_native_mount
+        sysroot_native_mount="$(bind_mount_cmd "${sysroot}" "${imgroot}/sysroot" ro)"
 
         local run_in_cont_lang=en_US.UTF-8
     else
@@ -932,7 +940,8 @@ run_in_container() {
     local arg
 
     # Recomputed per step so the memory cap tracks the RAM free right now.
-    local parallelism="$(compute_parallelism)"
+    local parallelism
+    parallelism="$(compute_parallelism)"
 
     unshare --user --map-root-user --mount --pid --fork ${unshare_net_flag} -- "$BASH" -c "
         set -e
@@ -1281,8 +1290,10 @@ do_stage() {
 
     if [[ -n ${from_source} || -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ]]; then
         if [[ -n ${from_source} ]]; then
-            local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-            local source_dir="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
+            local version
+            version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+            local source_dir
+            source_dir="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
         else
             local from_source=${name}
         fi
@@ -1564,7 +1575,8 @@ do_pkg() {
     eval "$(include_recipe "${base_dir}/${_recipes_dir}/$2")"
 
     if [[ -n ${from_source} ]]; then
-        local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+        local version
+        version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
     fi
 
     msg "Building ${_id} ${version}_${revision}"
@@ -1809,7 +1821,8 @@ do_update() {
     for hostdep in "${!_hostdeps_collected[@]}"; do
         tracked_subshell 'do_build_if_needed host-recipes "${hostdep}"'
     done
-    local builddeps_var="$(tracked_subshell 'get_builddeps "${name}"')"
+    local builddeps_var
+    builddeps_var="$(tracked_subshell 'get_builddeps "${name}"')"
     local dep
     for dep in ${builddeps_var}; do
         tracked_subshell 'do_build_if_needed recipes "${dep}"'
@@ -1905,9 +1918,10 @@ cmd_closure() {
                 || die "recipe '${rpkg}' not found"
         fi
 
-        local pair=$(eval "$(include_recipe "${base_dir}/${nsdir}/${rpkg}")" \
+        local pair srcpair
+        pair=$(eval "$(include_recipe "${base_dir}/${nsdir}/${rpkg}")" \
             && echo "${hostdeps} ${hostrundeps}|${deps} ${builddeps}")
-        local srcpair=$(get_source_deps "${rpkg}" "${nsdir}")
+        srcpair=$(get_source_deps "${rpkg}" "${nsdir}")
 
         for d in ${pair%%|*} ${srcpair%%|*}; do
             local edges="${edges} host/${d}"
@@ -2048,8 +2062,9 @@ cmd_download_for() {
         # would be nothing to verify the download against.
         local pkg_name="${pkg_file%.${arch}.xbps}"
         local pkg_name="${pkg_name%-*}"
-        local pkg_name="$(printf '%s' "${pkg_name}" | sed 's/[.[\*^$\\]/\\&/g')"
-        local expected_sha256="$(sed -n "/<key>${pkg_name}<\\/key>/,/<key>filename-sha256<\\/key>/{
+        pkg_name="$(printf '%s' "${pkg_name}" | sed 's/[.[\*^$\\]/\\&/g')"
+        local expected_sha256
+        expected_sha256="$(sed -n "/<key>${pkg_name}<\\/key>/,/<key>filename-sha256<\\/key>/{
             /<key>filename-sha256<\\/key>/{n;s/.*<string>\\(.*\\)<\\/string>.*/\\1/p;}
         }" "${index_plist}")"
         if [[ -z ${expected_sha256} ]]; then
@@ -2062,7 +2077,8 @@ cmd_download_for() {
         wget -O "${dl_path}" "${repo_url}/${pkg_file}" \
             || die "failed to download ${pkg_file} from ${repo_url}"
 
-        local actual_sha256="$(sha256sum "${dl_path}")"
+        local actual_sha256
+        actual_sha256="$(sha256sum "${dl_path}")"
         local actual_sha256="${actual_sha256%% *}"
         if [[ ${actual_sha256} != "${expected_sha256}" ]]; then
             die "SHA256 mismatch for ${pkg_file}:
@@ -2289,7 +2305,8 @@ cmd_revbump() {
 
             # Preparing the source is part of building the package, so what the
             # source step needs is a revbump edge just like what the build does.
-            local srcpair="$(get_source_deps "${pkg}" "${nsdir}")"
+            local srcpair
+            srcpair="$(get_source_deps "${pkg}" "${nsdir}")"
             local rhost_line="${rhost_line} ${srcpair%%|*}"
             local rdeps_line="${rdeps_line} ${srcpair#*|}"
 
@@ -2391,7 +2408,8 @@ cmd_install() {
             die "install only installs normal recipes, not '${pkg}'"
         fi
 
-        local bootstrap_pkg=$(eval "$(include_recipe "${base_dir}"/recipes/${pkg})" && echo "${bootstrap_pkg}")
+        local bootstrap_pkg
+        bootstrap_pkg=$(eval "$(include_recipe "${base_dir}"/recipes/${pkg})" && echo "${bootstrap_pkg}")
         if [[ ${bootstrap_pkg} == yes ]]; then
             continue
         fi
@@ -2453,7 +2471,8 @@ cmd_install() {
     sort <"${all_files}" >"${all_files_sorted}"
     uniq <"${all_files_sorted}" >"${all_files_uniq}"
 
-    local dup_elements="$(comm -23 "${all_files_sorted}" "${all_files_uniq}" | uniq)"
+    local dup_elements
+    dup_elements="$(comm -23 "${all_files_sorted}" "${all_files_uniq}" | uniq)"
 
     if [[ -n ${dup_elements} ]]; then
         error "duplicate files were found:"
@@ -2518,7 +2537,8 @@ reinit_container() {
     mv "${JINX_CACHE_DIR}/${xbps_dirname}" "${JINX_CACHE_DIR}/xbps"
     rm "${JINX_CACHE_DIR}/${xbps_tarball}"
 
-    local DEBOOTSTRAP_ARCH="$(uname -m)"
+    local DEBOOTSTRAP_ARCH
+    DEBOOTSTRAP_ARCH="$(uname -m)"
     case "${DEBOOTSTRAP_ARCH}" in
         i?86) local DEBOOTSTRAP_ARCH=i386 ;;
         x86_64) local DEBOOTSTRAP_ARCH=amd64 ;;
@@ -2594,7 +2614,8 @@ EOF
 
         local _ds_src="${_ds_tmp}/debootstrap"
         local _ds_share="debootstrap/usr/share/debootstrap"
-        local _ds_ver="$(sed "s/.*(\(.*\)).*/\1/; q" "${_ds_src}/debian/changelog")"
+        local _ds_ver
+        _ds_ver="$(sed "s/.*(\(.*\)).*/\1/; q" "${_ds_src}/debian/changelog")"
 
         mkdir -p "${_ds_share}/scripts" debootstrap/usr/sbin
         cp -a "${_ds_src}"/scripts/* "${_ds_share}/scripts/"
