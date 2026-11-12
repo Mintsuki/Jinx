@@ -771,6 +771,9 @@ prepare_container() {
 
     if [[ $JINX_NATIVE_MODE == yes && -z $cross_compile ]]; then
         imgroot="${sysroot}"
+        # Every container preloads it, and as it needs no library at all, it
+        # works with whatever C library the sysroot has.
+        cp "${JINX_CACHE_DIR}/sets/.image/nochown.so" "${sysroot}/nochown.so"
     else
         make_temp -d
         local host_root="${tmp}"
