@@ -1760,20 +1760,44 @@ expand_recipes() {
     done
 }
 
+# Builds the recipes $2... (as expand_recipes prints them), after whatever
+# they need that is missing, in build order; if $1 is yes, they themselves get
+# built anew.
+build_with_closure() {
+    local anew="$1"
+    shift 1
+
+    local -A wanted=()
+    local pkg
+    for pkg in "$@"; do
+        wanted[${pkg}]=1
+    done
+
+    local order dir
+    order="$(closure_of no "$@")"
+    for pkg in ${order}; do
+        dir=recipes
+        if [[ ${pkg} == host:* ]]; then
+            dir=host-recipes
+        fi
+        if [[ -z ${wanted[${pkg}]+x} ]]; then
+            do_build_if_needed "${dir}" "${pkg#host:}"
+        elif [[ ${anew} == yes ]]; then
+            tracked_subshell 'do_rebuild "${dir}" "${pkg#host:}"'
+        else
+            tracked_subshell 'do_pkg "${dir}" "${pkg#host:}"'
+        fi
+    done
+}
+
 cmd_build() {
     if [[ -z ${1-} ]]; then
         die "build requires at least one package name"
     fi
 
-    local pkgs pkg
+    local pkgs
     pkgs="$(expand_recipes "$@")"
-    for pkg in ${pkgs}; do
-        if [[ ${pkg} == host:* ]]; then
-            tracked_subshell 'do_pkg host-recipes "${pkg#host:}"'
-        else
-            tracked_subshell 'do_pkg recipes "${pkg}"'
-        fi
-    done
+    build_with_closure no ${pkgs}
 }
 
 # Builds the package of recipe $2 from $1 (recipes or host-recipes) if it is
@@ -1884,26 +1908,19 @@ cmd_update() {
     done
 }
 
-cmd_closure() {
-    # Print everything the given packages need to be built, themselves
-    # included, in build order and space separated; with -m, only what has no
-    # .xbps yet. Host packages carry a 'host:' prefix and share the one order
-    # with normal ones: a target recipe's hostdeps are host packages and a host
-    # recipe's deps are target packages, so the two kinds interleave.
-    # Nodes are 'host/<name>' internally because topo_sort splits its graph on ':'.
-    local missing_only=no
-    if [[ ${1-} == -m ]]; then
-        missing_only=yes
-        shift 1
-    fi
-    if [[ -z ${1-} ]]; then
-        set -- '*'
-    fi
+# Prints everything that the recipes $2... (as expand_recipes prints them) need
+# built, themselves included, in build order and space separated; if $1 is yes,
+# only what has no package yet. Host packages carry a 'host:' prefix and share
+# the one order with normal ones: a target recipe's hostdeps are host packages
+# and a host recipe's deps are target packages, so the two kinds interleave.
+# Nodes are 'host/<name>' internally because topo_sort splits its graph on ':'.
+closure_of() {
+    local missing_only="$1"
+    shift 1
 
     local -a roots=()
-    local pkgs pkg
-    pkgs="$(expand_recipes "$@")"
-    for pkg in ${pkgs}; do
+    local pkg
+    for pkg in "$@"; do
         if [[ ${pkg} == host:* ]]; then
             roots+=("host/${pkg#host:}")
         else
@@ -1988,6 +2005,21 @@ cmd_closure() {
     done
 
     echo "${out[*]-}"
+}
+
+cmd_closure() {
+    local missing_only=no
+    if [[ ${1-} == -m ]]; then
+        missing_only=yes
+        shift 1
+    fi
+    if [[ -z ${1-} ]]; then
+        set -- '*'
+    fi
+
+    local pkgs
+    pkgs="$(expand_recipes "$@")"
+    closure_of "${missing_only}" ${pkgs}
 }
 
 cmd_download_for() {
@@ -2225,15 +2257,9 @@ cmd_rebuild() {
         die "rebuild requires at least one package name"
     fi
 
-    local pkgs pkg
+    local pkgs
     pkgs="$(expand_recipes "$@")"
-    for pkg in ${pkgs}; do
-        if [[ ${pkg} == host:* ]]; then
-            tracked_subshell 'do_rebuild host-recipes "${pkg#host:}"'
-        else
-            tracked_subshell 'do_rebuild recipes "${pkg}"'
-        fi
-    done
+    build_with_closure yes ${pkgs}
 }
 
 # Writes recipe $1 to a temporary file, named by tmp, with the first line that

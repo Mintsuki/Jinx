@@ -358,9 +358,9 @@ A recipe is rebuilt under any of these conditions:
 
 All build-driving commands walk **downward** through the dependency tree, rebuilding anything whose XBPS file is missing along the way - host deps use their own `host-pkgs/<name>-<version>_<revision>.<host-arch>.xbps` file, just as normal recipes use `pkgs/`:
 
-- [`build <pkg>`](<#build>) / [`rebuild <pkg>`](<#rebuild>) iterate each direct dep and host-dep of `<pkg>`, recursing so that any missing artifact in the closure is rebuilt before `<pkg>` itself.
+- [`build <pkg>`](<#build>) / [`rebuild <pkg>`](<#rebuild>) first build whatever is missing in `<pkg>`'s closure, in the order that [`closure -m`](<#closure>) prints, and then `<pkg>` itself.
 - [`update <pkg>`](<#update>) performs the same walk, gated on `<pkg>` itself being missing; the walk uses one topological sort over `<pkg>`'s entire transitive closure.
-- [`closure -m`](<#closure>) walks the whole closure instead, already-built parts included, and prints everything missing in it, in build order.
+- [`closure -m`](<#closure>) walks the same closure as `build`, already-built parts included, and prints everything missing in it, in build order, without building anything.
 
 Topological sorting is required for correctness: before any recipe builds, every transitive dep of it must already have its XBPS file in `pkgs/` (or, for host deps, `host-pkgs/`), because `prepare_container` uses `xbps-install` to populate the build sysroot from `pkgs/` and the container's `/usr/local` from `host-pkgs/`. Sorting deps-first ensures that is always the case.
 
