@@ -2722,7 +2722,7 @@ EOF
         cp "${_ds_src}/functions" "${_ds_share}/functions"
         chmod 0644 "${_ds_share}/functions"
 
-        sed "s/@VERSION@/${_ds_ver}/g;s/HOST_ARCH=[^;#]*/HOST_ARCH=${DEBOOTSTRAP_ARCH}/g;s|DEBOOTSTRAP_DIR=/usr/share/debootstrap|DEBOOTSTRAP_DIR=\"$(pwd -P)/debootstrap/usr/share/debootstrap\"|g" "${_ds_src}/debootstrap" >debootstrap/usr/sbin/debootstrap
+        sed "s/@VERSION@/${_ds_ver}/g;s|DEBOOTSTRAP_DIR=/usr/share/debootstrap|DEBOOTSTRAP_DIR=\"$(pwd -P)/debootstrap/usr/share/debootstrap\"|g" "${_ds_src}/debootstrap" >debootstrap/usr/sbin/debootstrap
         chmod 0755 debootstrap/usr/sbin/debootstrap
     '
 
@@ -2734,7 +2734,8 @@ EOF
         mount --bind '${apt_cache}' '$JINX_CACHE_DIR/sets/.image/var/cache/apt/archives'
 
         LD_PRELOAD='$JINX_CACHE_DIR/sets/.image/nochown.so' debootstrap \
-            --foreign --variant=minbase --extractor=ar sid '$JINX_CACHE_DIR/sets/.image' https://snapshot.debian.org/archive/debian/${JINX_DEBIAN_SNAPSHOT}/
+            --foreign --variant=minbase --extractor=ar --arch=${DEBOOTSTRAP_ARCH} \
+            sid '$JINX_CACHE_DIR/sets/.image' https://snapshot.debian.org/archive/debian/${JINX_DEBIAN_SNAPSHOT}/
     "
 
     local dir
