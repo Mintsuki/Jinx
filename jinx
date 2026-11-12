@@ -2651,7 +2651,7 @@ cmd_install() {
                     local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
                 fi
 
-                if pkg_file_list "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" | grep -q "${elem}"; then
+                if pkg_file_list "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" | grep -qxF -- "${elem}"; then
                     printf " %s" "${pkg}"
                 fi
                 ')
