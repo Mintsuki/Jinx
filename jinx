@@ -2617,9 +2617,12 @@ cmd_install() {
                 xbps-remove -Ffy -r "${sysroot}" ${pkg} >/dev/null 2>&1 || true
         fi
 
+        make_temp
+        local install_log="${tmp}"
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${JINX_ARCH}" \
-            xbps-install -y $force_install -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} >/dev/null 2>&1
+            xbps-install -y $force_install -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} >"${install_log}" 2>&1 \
+            || { error "failed to install ${pkg}:"; sed "s/^/    /" "${install_log}" >&2; exit 1; }
 
         pkg_file_list "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" >>"${all_files}"
         '
