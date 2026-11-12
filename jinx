@@ -1707,6 +1707,8 @@ do_pkg() {
         -a "${_pkg}" \
         -f
 
+    remove_superseded_pkgs "${name}" "${build_dir}/${_kind}pkgs" "${_arch}" "${_pkg}"
+
     if [[ ${JINX_CLEAN_WORKDIRS} == yes ]]; then
         if [[ ${clean_workdirs} != no ]]; then
             force_remove "${_builds}" "${_builds}.configured"
@@ -1816,28 +1818,43 @@ do_build_if_needed() {
     fi
 }
 
-pkg_previously_built() {
-    # Has package $1 ever been built into directory $2 for arch $3? A bare
-    # '$1-*_*' glob would also match packages merely prefixed with '$1-', so
-    # require what precedes the revision to be a version, which has no '-'.
-    local pkg="$1"
-    local dir="$2"
-    local arch="$3"
-
-    local file
-    for file in "${dir}/${pkg}"-*_*."${arch}".xbps; do
+# Prints the package files of recipe $1 in directory $2 for arch $3, whatever
+# their version and revision. A bare '$1-*_*' glob would also match those of
+# recipes whose names merely start with '$1-', so what precedes the revision
+# has to be a version, which has no '-'.
+pkg_files_of() {
+    local file name_version
+    for file in "$2/$1"-*_*."$3".xbps; do
         [[ -f ${file} ]] || continue
 
-        local name_version="${file##*/}"
-        local name_version="${name_version%".${arch}.xbps"}"
-        local name_version="${name_version%_*}"
+        name_version="${file##*/}"
+        name_version="${name_version%".$3.xbps"}"
+        name_version="${name_version%_*}"
 
-        if [[ ${name_version#"${pkg}-"} != *-* ]]; then
-            return 0
+        if [[ ${name_version#"$1-"} != *-* ]]; then
+            echo "${file}"
         fi
     done
+}
 
-    return 1
+# Has package $1 ever been built into directory $2 for arch $3?
+pkg_previously_built() {
+    local files
+    files="$(pkg_files_of "$1" "$2" "$3")"
+    [[ -n ${files} ]]
+}
+
+# Deletes the package files of recipe $1 in directory $2 for arch $3 other than
+# $4, its latest, which the repository index lists instead of them.
+remove_superseded_pkgs() {
+    local files file
+    files="$(pkg_files_of "$1" "$2" "$3")"
+    while IFS= read -r file; do
+        if [[ -n ${file} && ${file} != "$4" ]]; then
+            msg2 "Removing ${file##*/}, which ${4##*/} supersedes"
+            rm -f "${file}" "${file}.sig" "${file}.sig2"
+        fi
+    done <<<"${files}"
 }
 
 do_update() {
@@ -2109,13 +2126,14 @@ cmd_download_for() {
     zstdcat "${repodata_path}" | tar -xOf - index.plist >"${index_plist}"
 
     # Download each missing package
-    local -a dl_paths=() dl_dests=()
+    local -a dl_names=() dl_paths=() dl_dests=()
     local pkg_file
     for pkg_file in ${download_list}; do
         # Without the SHA256 that the repository index records for it, there
         # would be nothing to verify the download against.
         local pkg_name="${pkg_file%.${arch}.xbps}"
         local pkg_name="${pkg_name%-*}"
+        dl_names+=("${pkg_name}")
         pkg_name="$(printf '%s' "${pkg_name}" | sed 's/[.[\*^$\\]/\\&/g')"
         local expected_sha256
         expected_sha256="$(sed -n "/<key>${pkg_name}<\\/key>/,/<key>filename-sha256<\\/key>/{
@@ -2157,6 +2175,10 @@ cmd_download_for() {
     xbps-rindex \
         -a "${dl_dests[@]}" \
         -f
+
+    for i in "${!dl_dests[@]}"; do
+        remove_superseded_pkgs "${dl_names[i]}" "${pkgs_dir}" "${arch}" "${dl_dests[i]}"
+    done
 }
 
 cmd_download() {

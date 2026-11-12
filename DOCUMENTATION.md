@@ -354,6 +354,8 @@ A recipe is rebuilt under any of these conditions:
 2. You run [`update`](<#update>) (or `update '*'`) and the recipe's current `name-version_revision.xbps` is missing.
 3. The recipe's `version` or `revision` changed since it was last built. The expected XBPS filename no longer matches any existing artifact, so the file appears "missing" - `update` will then rebuild it. If the recipe owns its source, the source's `.version` or `.revision` stamp no longer matches either, so the next build of any recipe sharing the source fetches, patches and prepares it afresh. Host recipes behave identically, with the `host-pkgs/<name>-<version>_<revision>.<host-arch>.xbps` filename and the stamps in `host-sources/`.
 
+Whenever Jinx builds or downloads a package, it deletes the packages of the same recipe for other versions and revisions, which the repository index no longer lists anyway: only the latest package of each recipe stays in `pkgs/` (or `host-pkgs/`).
+
 ### Dependency walking
 
 All build-driving commands walk **downward** through the dependency tree, rebuilding anything whose XBPS file is missing along the way - host deps use their own `host-pkgs/<name>-<version>_<revision>.<host-arch>.xbps` file, just as normal recipes use `pkgs/`:
@@ -1203,7 +1205,7 @@ Host recipes are built into XBPS packages just like normal recipes, kept in `hos
 >Linking against dynamic shared libraries *may* have unexpected behaviour when the resulting binary is run from the host: it could try to load a library that is not installed on the host. Static linking, or relying solely on libraries provided by `imagedeps`, is the safer route.
 
 >[!note]
->Outputs from host recipes are XBPS package files under `host-pkgs/` (relative to the build directory), e.g. `host-pkgs/limine-<version>_<revision>.<host-arch>.xbps`. Jinx installs them into the container automatically when building dependents. To run a host tool directly on the host, extract the package first (an XBPS file is a zstd-compressed tar archive), for example: `mkdir -p limine-host && zstdcat host-pkgs/limine-*.xbps | tar -x -C limine-host && ./limine-host/usr/local/bin/limine bios-install testos.iso`.
+>Outputs from host recipes are XBPS package files under `host-pkgs/` (relative to the build directory), e.g. `host-pkgs/limine-<version>_<revision>.<host-arch>.xbps`. Jinx installs them into the container automatically when building dependents. To run a host tool directly on the host, extract the package first (an XBPS file is a zstd-compressed tar archive), for example: `mkdir -p limine-host && zstdcat host-pkgs/limine-*.xbps | tar -x -C limine-host && ./limine-host/usr/local/bin/limine bios-install testos.iso`. As Jinx keeps only the latest package of each recipe, that glob matches a single file, provided that no other host recipe's name starts with `limine-`.
 
 ### Patches
 
