@@ -2676,8 +2676,6 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
 first_use() {
     echo "* preparing Jinx cache..."
 
-    mkdir -p "$JINX_CACHE_DIR"
-
     reinit_container
 
     echo "${jinx_version}" >"${JINX_CACHE_DIR}/version"
@@ -2688,7 +2686,11 @@ first_use() {
 }
 
 redo_first_use() {
-    echo "* purging old Jinx cache..."
+    # Without a version stamp, whatever is there is what an interrupted first
+    # run left behind, not an old cache.
+    if [[ -f "${JINX_CACHE_DIR}/version" ]]; then
+        echo "* purging old Jinx cache..."
+    fi
 
     # Everything except the lock file: it is held open right now, and removing
     # it drops the mutual exclusion for the rest of this run and leaves the
@@ -2733,10 +2735,6 @@ fi
 
 if [[ -z ${JINX_ARCH-} ]]; then
     die "$0: required config variable \$JINX_ARCH missing"
-fi
-
-if [[ ! -d $JINX_CACHE_DIR ]]; then
-    first_use
 fi
 
 if  [[ ! -f "${JINX_CACHE_DIR}/version" || $(cat "${JINX_CACHE_DIR}/version") != "${jinx_version}" ]] \
