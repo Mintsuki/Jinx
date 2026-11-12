@@ -196,7 +196,7 @@ example: jinx update '*'
 >For commands that operate on recipes ([`build`](<#build>), [`rebuild`](<#rebuild>), [`revbump`](<#revbump>), [`regenerate`](<#regenerate>), [`update`](<#update>), [`dry-run`](<#dry-run>), [`download`](<#download>), [`run-in`](<#run-in>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`. The `install` command, by contrast, only operates on normal recipes.
 
 >[!note]
->Every command except `help`, `version`, `init` and [`dry-run`](<#dry-run>) holds an exclusive lock on `<cache-dir>/jinx.lock` for the whole run, and refuses to start while another Jinx holds it. Jinx shares `sources/`, `builds/` and `pkgs/` between runs and is not concurrency-safe - a second run would delete the first one's build tree. Since the cache directory defaults to `<source-dir>/.jinx-cache`, this also serialises build directories that share a source directory, which is exactly what their shared `sources/` requires.
+>Every command except `help`, `version` and `init` holds an exclusive lock on `<cache-dir>/jinx.lock` for the whole run, and refuses to start while another Jinx holds it. Jinx shares `sources/`, `builds/` and `pkgs/` between runs and is not concurrency-safe - a second run would delete the first one's build tree. Since the cache directory defaults to `<source-dir>/.jinx-cache`, this also serialises build directories that share a source directory, which is exactly what their shared `sources/` requires.
 
 #### `init`
 
@@ -296,7 +296,7 @@ Prints, on a single line space-separated, the topological order of packages that
 
 Normal and host packages share a **single** topological order and interleave wherever the dependencies demand it; host ones are printed with a `host:` prefix, and `host:` targets are accepted as roots. The graph spans both namespaces exactly like the builds do: `hostdeps`, `hostrundeps` and `source_hostdeps` are edges into `host-recipes/`, while `deps`, `builddeps` and `source_deps` are edges into `recipes/`, and either kind of recipe may have either kind of edge. A recipe that borrows its source through [`from_source`](<#from_source>)/[`from_host_source`](<#from_host_source>) inherits the source recipe's `source_deps`/`source_hostdeps`, since those are what its own source preparation will pull in. [`binpkgdeps`](<#binpkgdeps>) are deliberately *not* edges here - not creating a build-order edge is the entire point of that property.
 
-`dry-run` builds nothing and writes nothing, and it is the one recipe command that does not take the build lock, so it can be run while another Jinx is busy in the same directory.
+`dry-run` builds nothing, but like every other recipe command it takes the build lock: it may have to refresh the shared cache first, which must not happen under a running build.
 
 This is useful for scripting (for example, building one package at a time in CI to keep memory low) and for quickly inspecting what an `update` will do without actually building anything.
 

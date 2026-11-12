@@ -276,26 +276,20 @@ if [[ ${in_container} == false ]]; then
 
     mkdir -p "${base_dir}/sources" "${base_dir}/host-sources" "${build_dir}/host-builds" "${build_dir}/host-pkgs" "${build_dir}/builds" "${build_dir}/pkgs"
 
-    case "$1" in
-        dry-run)
-            ;;
-        *)
-            # flock needs no write access, so hold the lock on a read-only
-            # descriptor: a lock file left behind by a run as root ('install'
-            # is allowed to be one) still works for every later run.
-            if [[ ! -e "${JINX_CACHE_DIR}/jinx.lock" ]]; then
-                : >"${JINX_CACHE_DIR}/jinx.lock"
-            fi
-            exec 9<"${JINX_CACHE_DIR}/jinx.lock"
-            if ! flock -n 9; then
-                die "$0: another jinx is already running in this build directory.
+    # flock needs no write access, so hold the lock on a read-only
+    # descriptor: a lock file left behind by a run as root ('install' is
+    # allowed to be one) still works for every later run.
+    if [[ ! -e "${JINX_CACHE_DIR}/jinx.lock" ]]; then
+        : >"${JINX_CACHE_DIR}/jinx.lock"
+    fi
+    exec 9<"${JINX_CACHE_DIR}/jinx.lock"
+    if ! flock -n 9; then
+        die "$0: another jinx is already running in this build directory.
   lock: ${JINX_CACHE_DIR}/jinx.lock
   jinx shares sources/, builds/ and pkgs/ between runs and is not
   concurrency-safe -- a second run will delete the first one's build tree.
   Wait for the running command to finish."
-            fi
-            ;;
-    esac
+    fi
 fi
 
 apt_cache="$JINX_CACHE_DIR/apt-cache"
