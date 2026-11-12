@@ -2639,6 +2639,30 @@ reinit_container() {
         die "failed to verify nochown.so"
     fi
 
+    # Fetch the pre-built static-musl xbps tarball for this host arch from the
+    # xbps-static-builds CI repo, verify, extract. Building xbps locally is
+    # avoided because Debian doesn't ship musl-linked libssl/libarchive/etc.,
+    # and statically linked glibc breaks libfetch's networking via NSS. This
+    # comes before the image, so that a failed download does not cost one.
+    local xbps_sha256="${XBPS_SHA256[${host_arch}]-}"
+    if [[ -z ${xbps_sha256} || ${xbps_sha256} == "?" ]]; then
+        die "no pre-built xbps tarball published for host arch '${host_arch}' (see XBPS_SHA256 in jinx)"
+    fi
+
+    local xbps_dirname="xbps-static-bin-linux-${host_arch}"
+    local xbps_tarball="${xbps_dirname}.tar.gz"
+    wget -O "${JINX_CACHE_DIR}/${xbps_tarball}" "${XBPS_RELEASE_URL_BASE}/${xbps_tarball}"
+    if ! sha256sum "${JINX_CACHE_DIR}/${xbps_tarball}" | grep "${xbps_sha256}" >/dev/null 2>&1; then
+        die "failed to verify the xbps tarball"
+    fi
+
+    # The tarball wraps everything in a top-level ${xbps_dirname}/ dir; extract
+    # then rename so ${JINX_CACHE_DIR}/xbps/bin is where PATH expects it.
+    ( cd "${JINX_CACHE_DIR}" && gunzip < "${xbps_tarball}" | tar -xf - )
+    force_remove "${JINX_CACHE_DIR}/xbps"
+    mv "${JINX_CACHE_DIR}/${xbps_dirname}" "${JINX_CACHE_DIR}/xbps"
+    rm "${JINX_CACHE_DIR}/${xbps_tarball}"
+
     local DEBOOTSTRAP_ARCH="$(uname -m)"
     case "${DEBOOTSTRAP_ARCH}" in
         i?86) local DEBOOTSTRAP_ARCH=i386 ;;
@@ -2767,29 +2791,6 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
     if [[ -n ${JINX_CMAKE_PLATFORM-} ]]; then
         cp "${base_dir}/${JINX_CMAKE_PLATFORM}" "${JINX_CACHE_DIR}"/sets/.image/usr/share/cmake-*/Modules/Platform/
     fi
-
-    # Fetch the pre-built static-musl xbps tarball for this host arch from the
-    # xbps-static-builds CI repo, verify, extract. Building xbps locally is
-    # avoided because Debian doesn't ship musl-linked libssl/libarchive/etc.,
-    # and statically linked glibc breaks libfetch's networking via NSS.
-    local xbps_sha256="${XBPS_SHA256[${host_arch}]-}"
-    if [[ -z ${xbps_sha256} || ${xbps_sha256} == "?" ]]; then
-        die "no pre-built xbps tarball published for host arch '${host_arch}' (see XBPS_SHA256 in jinx)"
-    fi
-
-    local xbps_dirname="xbps-static-bin-linux-${host_arch}"
-    local xbps_tarball="${xbps_dirname}.tar.gz"
-    wget -O "${JINX_CACHE_DIR}/${xbps_tarball}" "${XBPS_RELEASE_URL_BASE}/${xbps_tarball}"
-    if ! sha256sum "${JINX_CACHE_DIR}/${xbps_tarball}" | grep "${xbps_sha256}" >/dev/null 2>&1; then
-        die "failed to verify the xbps tarball"
-    fi
-
-    # The tarball wraps everything in a top-level ${xbps_dirname}/ dir; extract
-    # then rename so ${JINX_CACHE_DIR}/xbps/bin is where PATH expects it.
-    ( cd "${JINX_CACHE_DIR}" && gunzip < "${xbps_tarball}" | tar -xf - )
-    force_remove "${JINX_CACHE_DIR}/xbps"
-    mv "${JINX_CACHE_DIR}/${xbps_dirname}" "${JINX_CACHE_DIR}/xbps"
-    rm "${JINX_CACHE_DIR}/${xbps_tarball}"
 }
 
 first_use() {
