@@ -458,7 +458,7 @@ if [[ -n ${zip_url} ]]; then
 fi
 
 case "${recipe_dir}" in
-    */host-recipes/*) local _from_source_dir=host-recipes ;;
+    "${base_dir}"/host-recipes/*) local _from_source_dir=host-recipes ;;
     *) local _from_source_dir=recipes ;;
 esac
 if [[ -n ${from_host_source} ]]; then
@@ -734,7 +734,7 @@ prepare_container() {
             # A host recipe's own imagerundeps go into its own build image too,
             # mirroring how its own hostrundeps are installed into its own
             # container: a host build routinely runs what it just built.
-            */host-recipes/*)
+            "${base_dir}"/host-recipes/*)
                 for _imagerundep in ${imagerundeps}; do
                     imagedeps="${imagedeps} ${_imagerundep}"
                 done
