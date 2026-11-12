@@ -1580,9 +1580,12 @@ do_regen() {
             die "recipe '$1' uses from_source/from_host_source; regen its source with: $0 regen ${from_source}"
         fi
     fi
-    [[ -f "${base_dir}/${_sources_root}/$1.patched" ]] || die "cannot regenerate non-built package"
-
     eval "$(get_real_source_dir)"
+
+    if [[ ${is_sourceless_package} == true ]]; then
+        die "recipe '$1' has no source to regenerate"
+    fi
+    [[ -f "${base_dir}/${_sources_root}/$1.patched" ]] || die "cannot regenerate non-built package"
 
     make_temp
     local patch_file="${tmp}"
