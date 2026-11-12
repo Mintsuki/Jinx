@@ -976,6 +976,8 @@ cross_compile=yes
 
 When `yes`, Jinx will not record this recipe as a runtime dependency of any other package, nor install it into a sysroot via `jinx install`. Use this for packages that exist purely to bootstrap the build environment (e.g. minimal early libc/runtime headers used to build the real toolchain) and that should not appear in a finished image. Because such a package is never recorded, [`download`](<#download>) does not fetch it as a dependency of anything either (naming it explicitly still does).
 
+A bootstrap package that takes its source from the recipe it stands in for, through [`from_source`](<#from_source>), is also left out of any build sysroot that gets the package of that recipe anyway, as the two share files.
+
 Example:
 
 ```sh

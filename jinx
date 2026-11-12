@@ -794,6 +794,30 @@ jinx_run_in_container1() {
     rm "${run_in_cont1_root}/etc/resolv.conf"
 }
 
+# Prints, one per line, the packages that installing those of recipes $@ into
+# a sysroot installs: them, and what their packages record as runtime
+# dependencies (deps and binpkgdeps, apart from bootstrap packages), in turn.
+jinx_runtime_closure() {
+    local -A seen=()
+    local -a todo=("$@")
+    local i=0 pkg dep bootstrap
+    while (( i < ${#todo[@]} )); do
+        pkg="${todo[i]}"
+        i=$((i + 1))
+        if [[ -n ${seen[${pkg}]+x} ]]; then
+            continue
+        fi
+        seen[${pkg}]=1
+        echo "${pkg}"
+        for dep in $(eval "$(jinx_recipe_info recipes "${pkg}")" && echo "${deps} ${binpkgdeps}"); do
+            bootstrap="$(eval "$(jinx_recipe_info recipes "${dep}")" && echo "${bootstrap_pkg}")"
+            if [[ ${bootstrap} != yes ]]; then
+                todo+=("${dep}")
+            fi
+        done
+    done
+}
+
 jinx_prepare_container() {
     cd "${build_dir}"
 
@@ -820,11 +844,40 @@ jinx_prepare_container() {
     jinx_make_temp -d
     sysroot="${tmp}"
 
-    # One at a time: a bootstrap package and the package that it stands in for
-    # can both end up here, and xbps refuses their shared files in a single
-    # transaction.
+    # A bootstrap package shares its files with the package that it stands in
+    # for, which it names through from_source, so it stays out when that
+    # package comes along anyway.
+    local -A _stands_in_for=()
+    local -a _real=()
+    local _dep _info
+    for _dep in "${!_deps_collected[@]}"; do
+        _info="$(eval "$(jinx_recipe_info recipes "${_dep}")" \
+            && echo "${bootstrap_pkg}|${_from_source_dir}|${from_source}")"
+        case ${_info} in
+            yes\|recipes\|?*)
+                _stands_in_for[${_dep}]="${_info##*|}"
+                ;;
+            yes\|*)
+                ;;
+            *)
+                _real+=("${_dep}")
+                ;;
+        esac
+    done
+    local -A _comes_along=()
+    while IFS= read -r _dep; do
+        _comes_along[${_dep}]=1
+    done < <(jinx_runtime_closure ${_real[@]+"${_real[@]}"})
+
+    # One at a time: a bootstrap package that does not name the package it
+    # stands in for can still end up here along with it, and xbps refuses
+    # their shared files in a single transaction.
     local dep
     for dep in "${!_deps_collected[@]}"; do
+        if [[ -n ${_stands_in_for[${dep}]+x} \
+              && -n ${_comes_along[${_stands_in_for[${dep}]}]+x} ]]; then
+            continue
+        fi
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${JINX_ARCH}" \
             jinx_run_quietly "failed to install '${dep}' into the sysroot:" \
