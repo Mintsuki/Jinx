@@ -79,8 +79,11 @@ declare -A NOCHOWN_SHA256=(
     [s390x]=749beba8f4b72338e4b7769e0ed69a2f448e7cdc963cfd1d0a18d679c2f61ba2
 )
 
+# Debian's own source package of debootstrap, which snapshot.debian.org serves
+# byte for byte forever, unlike the archives that salsa generates on demand.
 debootstrap_version=1.0.145
-debootstrap_sha256sum=28c3b1cf94eb834195c1d54e4218dc9271bf56a991279e8548420b6f3d8ee8a9
+debootstrap_url="https://snapshot.debian.org/archive/debian/20260831T204404Z/pool/main/d/debootstrap/debootstrap_${debootstrap_version}.tar.gz"
+debootstrap_sha256sum=7cc8f9e386ed8dfd4b062a3b9527f0f45176dfa1b065e7db270f837956516b20
 
 # NO_COLOR and TERM=dumb are the usual ways to ask for plain output.
 if [[ -t 2 && -z ${NO_COLOR-} && ${TERM} != dumb ]]; then
@@ -2701,13 +2704,16 @@ EOF
     # from debian/changelog exactly the way that Makefile takes it.
     tracked_subshell '
         cd "${JINX_CACHE_DIR}"
-        wget -O debootstrap.tar.gz https://salsa.debian.org/installer-team/debootstrap/-/archive/${debootstrap_version}/debootstrap-${debootstrap_version}.tar.gz
-        if ! sha256sum debootstrap.tar.gz | grep "${debootstrap_sha256sum}" >/dev/null 2>&1; then
+        make_temp -d
+        local _ds_tmp="${tmp}"
+        wget -O "${_ds_tmp}/debootstrap.tar.gz" "${debootstrap_url}"
+        if ! sha256sum "${_ds_tmp}/debootstrap.tar.gz" | grep "${debootstrap_sha256sum}" >/dev/null 2>&1; then
             die "failed to verify the debootstrap tarball"
         fi
-        tar -zxf debootstrap.tar.gz
+        # Its top directory is called debootstrap/ too.
+        tar -zxf "${_ds_tmp}/debootstrap.tar.gz" -C "${_ds_tmp}"
 
-        local _ds_src="debootstrap-${debootstrap_version}"
+        local _ds_src="${_ds_tmp}/debootstrap"
         local _ds_share="debootstrap/usr/share/debootstrap"
         local _ds_ver="$(sed "s/.*(\(.*\)).*/\1/; q" "${_ds_src}/debian/changelog")"
 
@@ -2718,8 +2724,6 @@ EOF
 
         sed "s/@VERSION@/${_ds_ver}/g;s/HOST_ARCH=[^;#]*/HOST_ARCH=${DEBOOTSTRAP_ARCH}/g;s|DEBOOTSTRAP_DIR=/usr/share/debootstrap|DEBOOTSTRAP_DIR=\"$(pwd -P)/debootstrap/usr/share/debootstrap\"|g" "${_ds_src}/debootstrap" >debootstrap/usr/sbin/debootstrap
         chmod 0755 debootstrap/usr/sbin/debootstrap
-
-        force_remove debootstrap.tar.gz "${_ds_src}"
     '
 
     mkdir -p "$JINX_CACHE_DIR/sets/.image/var/cache/apt/archives"
