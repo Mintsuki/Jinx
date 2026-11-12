@@ -861,7 +861,7 @@ hostdeps="gcc binutils"
 - **Optional**.
 - Space-separated list of recipes.
 
-Like `hostdeps` for the purposes of build-time setup (built first and installed into the container's `/usr/local`), but **additionally** recorded as XBPS runtime dependencies of the produced host package - so any future host package that consumes this one will automatically pull them in. Use these for host tools that this recipe will itself invoke at run time when consumed elsewhere; listing a dependency under `hostrundeps` makes also listing it under `hostdeps` redundant. Must **only** be host recipes.
+Like `hostdeps` for the purposes of build-time setup (built first and installed into the container's `/usr/local`), but **additionally** recorded as XBPS runtime dependencies of the produced host package - so any future host package that consumes this one will automatically pull them in. Use these for host tools that this recipe will itself invoke at run time when consumed elsewhere; listing a dependency under `hostrundeps` makes also listing it under `hostdeps` redundant. Must **only** be host recipes. Only a host recipe's package records them: on a normal recipe, `hostrundeps` is just another name for `hostdeps`.
 
 Example:
 
