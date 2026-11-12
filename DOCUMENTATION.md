@@ -89,6 +89,9 @@ Ensure the following prerequisites have been acquired:
 >[!warning]
 >It is ***imperative*** that Jinx be run under Linux, as the container environment relies on non-POSIX Linux features (user namespaces, mount namespaces, `chroot`). You ***will*** run into issues on other systems.
 
+>[!note]
+>The user namespaces must be available to unprivileged users, as Jinx runs every build step in one. Ubuntu 24.04 and later restrict them by default through AppArmor, which makes the mounts Jinx performs in them fail; `sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0` lifts the restriction.
+
 Download the `jinx` executable script from https://github.com/Mintsuki/Jinx. Ensure that it is marked as executable with `chmod +x jinx`. Optionally, install it system-wide with `make install` (it accepts the standard `PREFIX` and `DESTDIR` variables). Finally, verify that it is functional with `jinx help` to display the help output.
 
 ## Basic Project Structure
