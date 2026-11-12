@@ -1024,27 +1024,15 @@ do_tarball_fetch() {
         local var_name="$1"
         local checksum_value="$2"
         if [[ -n ${current_recipe_file} && -f ${current_recipe_file} ]]; then
-            # Replace the first `var=?`, `var="?"` or `var='?'` placeholder,
-            # preserving indentation and quoting style.
-            local _re='^([[:space:]]*)'"${var_name}"'=("?|'\''?)[?]("?|'\''?)([[:space:]]*)$'
-            make_temp
-            local _out="${tmp}"
-            local _done=no
-            local line
-            while IFS= read -r line || [[ -n ${line} ]]; do
-                if [[ ${_done} == no && ${line} =~ $_re ]]; then
-                    local line="${BASH_REMATCH[1]}${var_name}=${BASH_REMATCH[2]}${checksum_value}${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
-                    local _done=yes
-                fi
-                printf '%s\n' "${line}"
-            done <"${current_recipe_file}" >"${_out}"
+            print_checksum_value() { echo "${checksum_value}"; }
+            rewrite_recipe_assignment "${current_recipe_file}" "${var_name}" '[?]' print_checksum_value
             # Left as it is, the '?' would let every later fetch through
             # unverified.
-            if [[ ${_done} == no ]]; then
+            if (( matched_lines == 0 )); then
                 die "cannot autofill ${var_name} for ${name}: no ${var_name}=? line in ${current_recipe_file}"
             fi
             # Written through, so that the recipe keeps its mode and owner.
-            cat "${_out}" >"${current_recipe_file}"
+            cat "${tmp}" >"${current_recipe_file}"
         else
             die "cannot autofill ${var_name} for ${name}: recipe file unknown"
         fi
@@ -2204,10 +2192,40 @@ cmd_rebuild() {
     done
 }
 
+# Writes recipe $1 to a temporary file, named by tmp, with the first line that
+# does nothing but assign the variable $2 a value matching the extended regular
+# expression $3 (which must not contain groups) changed to assign what the
+# command $4 prints for the old value instead, keeping its indentation, quotes,
+# and trailing blanks. Sets matched_lines to the number of such lines, and
+# matched_value to the old value.
+rewrite_recipe_assignment() {
+    local re='^([[:space:]]*)'"$2"'=("?|'\''?)('"$3"')("?|'\''?)([[:space:]]*)$'
+    make_temp
+    local out="${tmp}"
+    local count=0
+    local line value
+    while IFS= read -r line || [[ -n ${line} ]]; do
+        if [[ ${line} =~ $re ]]; then
+            count=$((count + 1))
+            if (( count == 1 )); then
+                matched_value="${BASH_REMATCH[3]}"
+                value="$("$4" "${matched_value}")"
+                line="${BASH_REMATCH[1]}$2=${BASH_REMATCH[2]}${value}${BASH_REMATCH[4]}${BASH_REMATCH[5]}"
+            fi
+        fi
+        printf '%s\n' "${line}"
+    done <"$1" >"${out}"
+    matched_lines="${count}"
+    tmp="${out}"
+}
+
+next_revision() {
+    echo "$(($1 + 1))"
+}
+
 revbump_one_recipe() {
-    # Write the recipe with its first literal 'revision=' line incremented,
-    # preserving indentation, quoting style and trailing whitespace, to the
-    # temporary file revbump_out, and its old revision to revbump_old.
+    # Write the recipe with its revision incremented to the temporary file
+    # revbump_out, and its old revision to revbump_old.
     local recipe_file="$1"
     local label="$2"
 
@@ -2215,31 +2233,13 @@ revbump_one_recipe() {
         die "revbump: recipe file '${recipe_file}' not found"
     fi
 
-    local rev_re='^([[:space:]]*)revision=("?|'\''?)([0-9]+)("?|'\''?)([[:space:]]*)$'
-
-    make_temp
-    local out="${tmp}"
-
-    local count=0
-    local old_rev=
-    local line
-    while IFS= read -r line || [[ -n ${line} ]]; do
-        if [[ ${line} =~ $rev_re ]]; then
-            local count=$((count + 1))
-            if [[ ${count} == 1 ]]; then
-                local old_rev="${BASH_REMATCH[3]}"
-                local line="${BASH_REMATCH[1]}revision=${BASH_REMATCH[2]}$((old_rev + 1))${BASH_REMATCH[4]}${BASH_REMATCH[5]}"
-            fi
-        fi
-        printf '%s\n' "${line}"
-    done <"${recipe_file}" >"${out}"
-
-    if [[ ${count} != 1 ]]; then
-        die "revbump: recipe '${label}' has ${count} literal 'revision=' line(s); expected exactly 1 (bump it manually)"
+    rewrite_recipe_assignment "${recipe_file}" revision '[0-9]+' next_revision
+    if (( matched_lines != 1 )); then
+        die "revbump: recipe '${label}' has ${matched_lines} literal 'revision=' line(s); expected exactly 1 (bump it manually)"
     fi
 
-    revbump_out="${out}"
-    revbump_old="${old_rev}"
+    revbump_out="${tmp}"
+    revbump_old="${matched_value}"
 }
 
 cmd_revbump() {
