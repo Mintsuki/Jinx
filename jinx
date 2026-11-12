@@ -730,7 +730,7 @@ run_in_container() {
         local run_in_cont_colorterm="COLORTERM=\"$COLORTERM\""
     fi
 
-    mkdir -p "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/host-sources" "${imgroot}/build_dir"
+    mkdir -p "${imgroot}/base_dir" "${imgroot}/build_dir"
     cat /etc/resolv.conf >"${imgroot}/etc/resolv.conf"
     touch "${imgroot}/jinx"
 
@@ -811,7 +811,7 @@ run_in_container() {
         '
     "
 
-    force_remove "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/sources" "${imgroot}/host-sources" "${imgroot}/build_dir" "${imgroot}/jinx"
+    force_remove "${imgroot}/sysroot" "${imgroot}/base_dir" "${imgroot}/build_dir" "${imgroot}/jinx"
     rm "${imgroot}/etc/resolv.conf"
 }
 
