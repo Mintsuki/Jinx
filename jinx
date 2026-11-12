@@ -145,28 +145,49 @@ cmd_help() {
     printf "\n\nexample: $0 update '*'\n"
 }
 
+# Single quotes, unlike printf %q, read back the same in any POSIX shell, and
+# .jinx-parameters is meant to be sourced by scripts as well.
+shell_quote() {
+    printf "'%s'" "${1//\'/\'\\\'\'}"
+}
+
 cmd_init() {
     if [[ -z ${1-} ]]; then
         die "init requires a directory argument"
     fi
 
+    local dir="$1"
+    shift 1
+
+    local p
+    for p in "$@"; do
+        if [[ ${p} != *=* || ! ${p%%=*} =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+            die "init: '${p}' is not of the form KEY=VALUE"
+        fi
+        case "${p%%=*}" in
+            INIT_MAJOR_VER|SOURCE_DIR)
+                die "init: ${p%%=*} is set by init itself"
+                ;;
+        esac
+    done
+
     local srcdir
     local builddir
 
-    if [[ -f "$1/Jinxfile" ]]; then
+    if [[ -f "${dir}/Jinxfile" ]]; then
         # <dir> is the source directory; the current directory is the build directory.
-        local srcdir="$1"
+        local srcdir="${dir}"
         local builddir="$(pwd -P)"
     elif [[ -f Jinxfile ]]; then
         # The current directory is the source; <dir> is a build directory to create.
-        if [[ -e "$1" ]]; then
-            die "'$1' already exists; when the current directory is the source, <dir> must be a new directory to create as the build directory"
+        if [[ -e "${dir}" ]]; then
+            die "'${dir}' already exists; when the current directory is the source, <dir> must be a new directory to create as the build directory"
         fi
         local srcdir="$(pwd -P)"
-        mkdir -p "$1"
-        local builddir="$(cd "$1" && pwd -P)"
+        mkdir -p "${dir}"
+        local builddir="$(cd "${dir}" && pwd -P)"
     else
-        die "could not find a Jinxfile in '$1' or in the current directory"
+        die "could not find a Jinxfile in '${dir}' or in the current directory"
     fi
 
     if [[ -f "${builddir}/.jinx-parameters" ]]; then
@@ -177,20 +198,15 @@ cmd_init() {
         die "In-tree builds are not supported"
     fi
 
-    cat <<EOF >"${builddir}/.jinx-parameters"
-#! /bin/sh
-
-JINX_INIT_MAJOR_VER="${jinx_major_ver}"
-JINX_SOURCE_DIR="${srcdir}"
-JINX_ARCH="$(uname -m)"
-EOF
-
-    shift 1
-
-    local p
-    for p in "$@"; do
-        printf 'JINX_%s="%s"\n' "${p%%=*}" "${p#*=}" >>"${builddir}/.jinx-parameters"
-    done
+    {
+        printf '#! /bin/sh\n\n'
+        printf 'JINX_INIT_MAJOR_VER=%s\n' "$(shell_quote "${jinx_major_ver}")"
+        printf 'JINX_SOURCE_DIR=%s\n' "$(shell_quote "${srcdir}")"
+        printf 'JINX_ARCH=%s\n' "$(shell_quote "$(uname -m)")"
+        for p in "$@"; do
+            printf 'JINX_%s=%s\n' "${p%%=*}" "$(shell_quote "${p#*=}")"
+        done
+    } >"${builddir}/.jinx-parameters"
 
     msg "Initialised '${builddir}' as build directory with '${srcdir}' as source directory"
 }

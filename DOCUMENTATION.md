@@ -205,7 +205,7 @@ Initialises a build directory. Jinx autodetects the roles of the current directo
 - If `<dir>` contains a `Jinxfile`, then `<dir>` is the **source** directory and the **current directory** is the build directory (which must not already be initialised, nor itself be a source directory - in-tree builds are rejected).
 - Otherwise, if the **current directory** contains a `Jinxfile`, then the current directory is the **source** and `<dir>` is a **new** build directory to create (it must not already exist; intermediate parents are created as needed).
 
-If neither location has a `Jinxfile`, `init` errors out. Any further arguments of the form `KEY=VALUE` are written into the build directory's `.jinx-parameters` prefixed with `JINX_`.
+If neither location has a `Jinxfile`, `init` errors out. Any further arguments of the form `KEY=VALUE` are written into the build directory's `.jinx-parameters` prefixed with `JINX_`. `KEY` must be a valid shell variable name other than `INIT_MAJOR_VER` and `SOURCE_DIR`, which `init` sets itself; `VALUE` is kept exactly as given, spaces and quotes included.
 
 Usage:
 
@@ -225,7 +225,7 @@ cd source
 ./jinx init ../build ARCH=x86_64
 ```
 
-This produces a `.jinx-parameters` file in the build directory containing at minimum `JINX_INIT_MAJOR_VER`, `JINX_SOURCE_DIR`, and `JINX_ARCH` (which defaults to `$(uname -m)` if not overridden via `ARCH=...`). Any extra arguments become `JINX_<KEY>="<VALUE>"`. In the first form `JINX_SOURCE_DIR` is recorded exactly as passed (a relative path stays relative to the build directory, resolved when Jinx runs); in the second form it is recorded as an absolute path.
+This produces a `.jinx-parameters` file in the build directory containing at minimum `JINX_INIT_MAJOR_VER`, `JINX_SOURCE_DIR`, and `JINX_ARCH` (which defaults to `$(uname -m)` if not overridden via `ARCH=...`). Any extra arguments become `JINX_<KEY>='<VALUE>'`, single-quoted so that any POSIX shell can source the file. In the first form `JINX_SOURCE_DIR` is recorded exactly as passed (a relative path stays relative to the build directory, resolved when Jinx runs); in the second form it is recorded as an absolute path.
 
 `JINX_INIT_MAJOR_VER` records the major version of the `jinx` that initialised the directory. Every subsequent `jinx` invocation refuses to operate on the build directory if this value is missing or doesn't match the running `jinx`'s major version. Recovery is to delete the build directory and run `jinx init` again to start over; there is no in-place reinit because previously built artifacts may be incompatible too.
 
