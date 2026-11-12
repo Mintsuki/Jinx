@@ -1272,38 +1272,11 @@ do_prepare() {
     cd "${base_dir}"
 }
 
-do_configure_host() {
-    eval "$(include_recipe "${base_dir}"/host-recipes/$1)"
-
-    mkdir -p "${build_dir}"/host-builds/${name}
-
-    if [[ -n ${from_source} || -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ]]; then
-        if [[ -n ${from_source} ]]; then
-            local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-            local source_dir="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
-        else
-            local from_source=${name}
-        fi
-
-        if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/${_sources_root}/${from_source}
-        else
-            local source_dir="${base_dir}"/"${source_dir}"
-        fi
-    fi
-
-    local prefix="/usr/local"
-    local sysroot="/sysroot"
-
-    cd "${build_dir}"/host-builds/${name}
-    configure
-    cd "${base_dir}"
-}
-
-do_build_host() {
-    eval "$(include_recipe "${base_dir}"/host-recipes/$1)"
-
-    mkdir -p "${build_dir}"/host-builds/${name}
+# Runs stage $2 (configure, build, package, or run-in) of recipe $3 from $1
+# (recipes or host-recipes). For run-in, $4 is the file of the command to run.
+do_stage() {
+    local _kind="${1%recipes}" _stage="$2" _cmd_file="${4-}"
+    eval "$(include_recipe "${base_dir}/$1/$3")"
 
     if [[ -n ${from_source} || -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ]]; then
         if [[ -n ${from_source} ]]; then
@@ -1320,141 +1293,40 @@ do_build_host() {
         fi
     fi
 
-    local prefix="/usr/local"
+    local prefix=/usr
+    if [[ -n ${_kind} ]]; then
+        prefix=/usr/local
+    fi
     local sysroot="/sysroot"
 
-    cd "${build_dir}"/host-builds/${name}
-    build
-    cd "${base_dir}"
-}
-
-do_package_host() {
-    eval "$(include_recipe "${base_dir}"/host-recipes/$1)"
-
-    local dest_dir="${build_dir}/host-pkgs/${name}"
-
-    force_remove "${dest_dir}"
-    mkdir -p "${dest_dir}"
-
-    if [[ -n ${from_source} || -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ]]; then
-        if [[ -n ${from_source} ]]; then
-            local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-            local source_dir="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
-        else
-            local from_source=${name}
-        fi
-
-        if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/${_sources_root}/${from_source}
-        else
-            local source_dir="${base_dir}"/"${source_dir}"
-        fi
+    if [[ ${_stage} == package ]]; then
+        local dest_dir="${build_dir}/${_kind}pkgs/${name}"
+        force_remove "${dest_dir}"
+        mkdir -p "${dest_dir}${prefix}"
     fi
 
-    local prefix="/usr/local"
-    local sysroot="/sysroot"
-
-    mkdir -p "${dest_dir}${prefix}"
-
-    cd "${build_dir}"/host-builds/${name}
-    package
-
-    # Remove libtool files
-    find "${dest_dir}${prefix}" -name "*.la" -exec rm -rvf {} +
-
-    cd "${base_dir}"
-}
-
-do_configure() {
-    eval "$(include_recipe "${base_dir}"/recipes/$1)"
-
-    mkdir -p "${build_dir}"/builds/${name}
-
-    if [[ -n ${from_source} || -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ]]; then
-        if [[ -n ${from_source} ]]; then
-            local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-            local source_dir="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
-        else
-            local from_source=${name}
-        fi
-
-        if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/${_sources_root}/${from_source}
-        else
-            local source_dir="${base_dir}"/"${source_dir}"
-        fi
-    fi
-
-    local prefix="/usr"
-    local sysroot="/sysroot"
-
-    cd "${build_dir}"/builds/${name}
-    configure
-    cd "${base_dir}"
-}
-
-do_build() {
-    eval "$(include_recipe "${base_dir}"/recipes/$1)"
-
-    mkdir -p "${build_dir}"/builds/${name}
-
-    if [[ -n ${from_source} || -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ]]; then
-        if [[ -n ${from_source} ]]; then
-            local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-            local source_dir="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
-        else
-            local from_source=${name}
-        fi
-
-        if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/${_sources_root}/${from_source}
-        else
-            local source_dir="${base_dir}"/"${source_dir}"
-        fi
-    fi
-
-    local prefix="/usr"
-    local sysroot="/sysroot"
-
-    cd "${build_dir}"/builds/${name}
-    build
-    cd "${base_dir}"
-}
-
-do_package() {
-    eval "$(include_recipe "${base_dir}"/recipes/$1)"
-
-    local dest_dir="${build_dir}/pkgs/${name}"
-
-    force_remove "${dest_dir}"
-    mkdir -p "${dest_dir}"
-
-    if [[ -n ${from_source} || -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ]]; then
-        if [[ -n ${from_source} ]]; then
-            local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-            local source_dir="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
-        else
-            local from_source=${name}
-        fi
-
-        if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/${_sources_root}/${from_source}
-        else
-            local source_dir="${base_dir}"/"${source_dir}"
-        fi
-    fi
-
-    local prefix="/usr"
-    local sysroot="/sysroot"
-
-    mkdir -p "${dest_dir}${prefix}"
-
-    cd "${build_dir}"/builds/${name}
-    package
-
-    # Remove libtool files
-    find "${dest_dir}${prefix}" -name "*.la" -exec rm -rvf {} +
-
+    mkdir -p "${build_dir}/${_kind}builds/${name}"
+    cd "${build_dir}/${_kind}builds/${name}"
+    case ${_stage} in
+        configure)
+            configure
+            ;;
+        build)
+            build
+            ;;
+        package)
+            package
+            # Remove libtool files
+            find "${dest_dir}${prefix}" -name "*.la" -exec rm -rvf {} +
+            ;;
+        run-in)
+            # Unlike the shell that runs it, a command such as sh -c only sees
+            # the variables that are exported.
+            export name recipe_dir source_dir prefix sysroot parallelism base_dir build_dir JINX_ARCH
+            set --
+            . "${_cmd_file}"
+            ;;
+    esac
     cd "${base_dir}"
 }
 
@@ -1707,13 +1579,13 @@ do_host_pkg() {
     local container_sources_ro=yes
     if [[ ! -d "${build_dir}/host-builds/$1" ]]; then
         msg2 "Running configure()"
-        run_in_container internal-configure-host $1
+        run_in_container internal-stage host-recipes configure "$1"
     fi
     msg2 "Running build()"
-    run_in_container internal-build-host $1
+    run_in_container internal-stage host-recipes build "$1"
     force_remove "${build_dir}"/host-pkgs/$1
     msg2 "Running package()"
-    run_in_container internal-package-host $1
+    run_in_container internal-stage host-recipes package "$1"
 
     destroy_container
 
@@ -1801,13 +1673,13 @@ do_pkg() {
     local container_sources_ro=yes
     if [[ ! -d "${build_dir}/builds/$1" ]]; then
         msg2 "Running configure()"
-        run_in_container internal-configure $1
+        run_in_container internal-stage recipes configure "$1"
     fi
     msg2 "Running build()"
-    run_in_container internal-build $1
+    run_in_container internal-stage recipes build "$1"
     force_remove "${build_dir}"/pkgs/$1
     msg2 "Running package()"
-    run_in_container internal-package $1
+    run_in_container internal-stage recipes package "$1"
 
     destroy_container
 
@@ -2346,78 +2218,6 @@ cmd_regen() {
     done
 }
 
-do_run_in() {
-    local pkg="$1"
-    local cmd_file="$2"
-
-    eval "$(include_recipe "${base_dir}"/recipes/${pkg})"
-
-    mkdir -p "${build_dir}"/builds/${name}
-
-    if [[ -n ${from_source} || -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ]]; then
-        if [[ -n ${from_source} ]]; then
-            local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-            local source_dir="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
-        else
-            local from_source=${name}
-        fi
-
-        if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/${_sources_root}/${from_source}
-        else
-            local source_dir="${base_dir}"/"${source_dir}"
-        fi
-    fi
-
-    local prefix="/usr"
-    local sysroot="/sysroot"
-
-    cd "${build_dir}"/builds/${name}
-
-    # Unlike the shell that runs it, a command such as sh -c only sees the
-    # variables that are exported.
-    export name recipe_dir source_dir prefix sysroot parallelism base_dir build_dir JINX_ARCH
-
-    set --
-    . "${cmd_file}"
-}
-
-do_run_in_host() {
-    local pkg="$1"
-    local cmd_file="$2"
-
-    eval "$(include_recipe "${base_dir}"/host-recipes/${pkg})"
-
-    mkdir -p "${build_dir}"/host-builds/${name}
-
-    if [[ -n ${from_source} || -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ]]; then
-        if [[ -n ${from_source} ]]; then
-            local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-            local source_dir="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$source_dir")"
-        else
-            local from_source=${name}
-        fi
-
-        if [[ -z ${source_dir} ]]; then
-            local source_dir="${base_dir}"/${_sources_root}/${from_source}
-        else
-            local source_dir="${base_dir}"/"${source_dir}"
-        fi
-    fi
-
-    local prefix="/usr/local"
-    local sysroot="/sysroot"
-
-    cd "${build_dir}"/host-builds/${name}
-
-    # Unlike the shell that runs it, a command such as sh -c only sees the
-    # variables that are exported.
-    export name recipe_dir source_dir prefix sysroot parallelism base_dir build_dir JINX_ARCH
-
-    set --
-    . "${cmd_file}"
-}
-
 cmd_run_in() {
     if [[ -z ${1-} ]]; then
         die "run-in requires a recipe name"
@@ -2429,12 +2229,8 @@ cmd_run_in() {
     fi
 
     local recipes_dir=recipes
-    local internal_cmd=internal-run-in
-    local builds_dir=builds
     if [[ ${recipe_glob} == host:* ]]; then
         local recipes_dir=host-recipes
-        local internal_cmd=internal-run-in-host
-        local builds_dir=host-builds
     fi
 
     local run_in_recipes run_in_recipe
@@ -2469,12 +2265,10 @@ cmd_run_in() {
         fi
         prepare_container
 
-        mkdir -p "${build_dir}"/${builds_dir}/${name}
-
         local container_sources_ro=
         local container_base_dir_ro=
         local allow_network=yes
-        run_in_container "${internal_cmd}" "${run_in_recipe}" "${cmd_file_inner}"
+        run_in_container internal-stage "${recipes_dir}" run-in "${run_in_recipe}" "${cmd_file_inner}"
 
         destroy_container
     done
@@ -3069,31 +2863,9 @@ case "$1" in
     internal-patch)
         do_patch "$2" "$3"
         ;;
-    internal-configure-host)
-        do_configure_host "$2"
-        ;;
-    internal-build-host)
-        do_build_host "$2"
-        ;;
-    internal-package-host)
-        do_package_host "$2"
-        ;;
-    internal-configure)
-        do_configure "$2"
-        ;;
-    internal-build)
-        do_build "$2"
-        ;;
-    internal-package)
-        do_package "$2"
-        ;;
-    internal-run-in)
+    internal-stage)
         shift 1
-        do_run_in "$@"
-        ;;
-    internal-run-in-host)
-        shift 1
-        do_run_in_host "$@"
+        do_stage "$@"
         ;;
     build)
         shift 1
