@@ -2394,7 +2394,7 @@ cmd_revbump() {
     local -A revdeps
     local nsdir pkg
     for nsdir in recipes host-recipes; do
-        for pkg in $(cd "${base_dir}/${nsdir}" && echo *); do
+        for pkg in $(cd "${base_dir}/${nsdir}" 2>/dev/null && echo *); do
             [[ -f "${base_dir}/${nsdir}/${pkg}/recipe" ]] || continue
             local node="${nsdir}/${pkg}"
 
