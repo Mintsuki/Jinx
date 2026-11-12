@@ -159,7 +159,7 @@ sources/
 \-- <name>.prepared       # stamp: prepare() has been run
 ```
 
-The stamp files are what make source preparation happen exactly once: a `<name>.version` or `<name>.revision` that no longer matches the recipe owning the source wipes the whole family and forces a fresh fetch, patch and prepare, whichever of the recipes sharing the source builds first. A local package (one using [`source_dir`](<#source_dir>)) keeps its tree wherever the recipe points, so only the stamp files show up here - Jinx never patches, copies or deletes the tree itself.
+The stamp files are what make source preparation happen exactly once: a `<name>.version` or `<name>.revision` that no longer matches the recipe owning the source wipes the whole family and forces a fresh fetch, patch and prepare, whichever of the recipes sharing the source builds first. A local package (one using [`source_dir`](<#source_dir>)) keeps its tree wherever the recipe points, so only the stamp files show up here - Jinx never patches, copies or deletes the tree itself. A recipe without a source has no entries here at all.
 
 >[!note]
 >In-tree builds are explicitly forbidden. Running `jinx init` from a directory that already contains a `Jinxfile` will fail.
