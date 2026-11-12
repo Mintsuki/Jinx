@@ -2106,6 +2106,7 @@ cmd_download_for() {
     zstdcat "${repodata_path}" | tar -xOf - index.plist >"${index_plist}"
 
     # Download each missing package
+    local -a dl_paths=() dl_dests=()
     local pkg_file
     for pkg_file in ${download_list}; do
         # Without the SHA256 that the repository index records for it, there
@@ -2138,15 +2139,21 @@ cmd_download_for() {
 
         # mktemp made it private; built packages are not.
         chmod 0644 "${dl_path}"
-        mv "${dl_path}" "${pkgs_dir}/${pkg_file}"
-
-        # Re-index this package
-        XBPS_ARCH=invalid \
-        XBPS_TARGET_ARCH="${arch}" \
-        xbps-rindex \
-            -a "${pkgs_dir}/${pkg_file}" \
-            -f
+        dl_paths+=("${dl_path}")
+        dl_dests+=("${pkgs_dir}/${pkg_file}")
     done
+
+    # Only once every download checked out, so that a failure leaves no package
+    # behind that the index does not list, which no later run would add.
+    local i
+    for i in "${!dl_paths[@]}"; do
+        mv "${dl_paths[i]}" "${dl_dests[i]}"
+    done
+    XBPS_ARCH=invalid \
+    XBPS_TARGET_ARCH="${arch}" \
+    xbps-rindex \
+        -a "${dl_dests[@]}" \
+        -f
 }
 
 cmd_download() {
