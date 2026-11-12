@@ -154,13 +154,12 @@ sources/
 |-- <name>-clean/         # snapshot taken after the static patches, before the working patch
 |-- <name>-workdir/       # editable copy; `jinx regen` diffs it against <name>-clean/
 |-- <name>.version        # version the tree was fetched for
-|-- <name>.revision       # revision a normal recipe last prepared the tree for
-|-- <name>.host-revision  # revision a host recipe last prepared the tree for
+|-- <name>.revision       # revision the tree was prepared for
 |-- <name>.patched        # stamp: patches have been applied
 \-- <name>.prepared       # stamp: prepare() has been run
 ```
 
-The stamp files are what make source preparation happen exactly once: a mismatching `<name>.version` (or a bumped `revision`) wipes the whole family and forces a fresh fetch, patch and prepare. A local package (one using [`source_dir`](<#source_dir>)) keeps its tree wherever the recipe points, so only the stamp files show up here - Jinx never patches, copies or deletes the tree itself.
+The stamp files are what make source preparation happen exactly once: a `<name>.version` or `<name>.revision` that no longer matches the recipe owning the source wipes the whole family and forces a fresh fetch, patch and prepare, whichever of the recipes sharing the source builds first. A local package (one using [`source_dir`](<#source_dir>)) keeps its tree wherever the recipe points, so only the stamp files show up here - Jinx never patches, copies or deletes the tree itself.
 
 >[!note]
 >In-tree builds are explicitly forbidden. Running `jinx init` from a directory that already contains a `Jinxfile` will fail.
@@ -353,7 +352,7 @@ A recipe is rebuilt under any of these conditions:
 
 1. You explicitly run [`build`](<#build>) or [`rebuild`](<#rebuild>) on it. `build` always re-runs the recipe's `build()` + `package()` stages (skipping `configure()` if the build directory still exists from a previous run); `rebuild` additionally removes the build directory first so `configure()` reruns from scratch.
 2. You run [`update`](<#update>) (or `update '*'`) and the recipe's current `name-version_revision.xbps` is missing.
-3. The recipe's `version` or `revision` changed since it was last built. The expected XBPS filename no longer matches any existing artifact, so the file appears "missing" - `update` will then rebuild it, and `do_pkg`'s internal `.revision` marker mismatch will additionally clean the unpacked source tree, forcing a fresh fetch/patch/prepare for the next build (the `version` axis is handled separately by `.version`). Host recipes behave identically: `do_host_pkg` uses a `.host-revision` marker and the `host-pkgs/<name>-<version>_<revision>.<host-arch>.xbps` filename in exactly the same way.
+3. The recipe's `version` or `revision` changed since it was last built. The expected XBPS filename no longer matches any existing artifact, so the file appears "missing" - `update` will then rebuild it. If the recipe owns its source, the source's `.version` or `.revision` stamp no longer matches either, so the next build of any recipe sharing the source fetches, patches and prepares it afresh. Host recipes behave identically, with the `host-pkgs/<name>-<version>_<revision>.<host-arch>.xbps` filename and the stamps in `host-sources/`.
 
 ### Dependency walking
 
@@ -1198,7 +1197,7 @@ Host recipes can declare their own sources inline (`tarball_url`, `zip_url`, `gi
 
 A host recipe may also list [`deps`](<#deps>)/[`builddeps`](<#builddeps>). Those name normal recipes, are built for the target, and are installed into the `/sysroot` its container sees - this is how a cross-toolchain gets the target headers and libraries it is built against. They are *not* recorded as dependencies of the resulting host package; only [`hostrundeps`](<#hostrundeps>) are, with [`imagerundeps`](<#imagerundeps>) doing the equivalent for the Debian packages a consumer's container image needs in order to run this one. [`binpkgdeps`](<#binpkgdeps>) is a normal-recipe property and has no effect in `host-recipes/`, while [`conf_files`](<#conf_files>) behaves identically for both.
 
-Host recipes are built into XBPS packages just like normal recipes, kept in `host-pkgs/` with its own XBPS repository index. The package filename is `<name>-<version>_<revision>.<host-arch>.xbps`, where `<host-arch>` is the build machine's architecture (`uname -m`) - host tools are native to the build machine, so this is independent of `JINX_ARCH` (the target arch). When a recipe needs host dependencies, Jinx `xbps-install`s them on the fly into the build container's `/usr/local` during container preparation, exactly the way normal `deps` are installed into the sysroot; `hostrundeps` are recorded as the host package's XBPS run-dependencies. Host recipes get a `.host-revision` marker that is the exact counterpart of a normal recipe's `.revision` (it records the `revision` the source tree was last prepared for and forces a source re-clean when the recipe's `revision` changes - the `version` axis is handled separately by `.version` - gated off for `from_source`/`from_host_source` consumers in the same way). Consequently a `version`/`revision` bump on a host recipe triggers a rebuild, and [`update`](<#update>)/[`closure`](<#closure>)/[`build`](<#build>)/[`rebuild`](<#rebuild>) treat host recipes by their XBPS file identically to normal recipes.
+Host recipes are built into XBPS packages just like normal recipes, kept in `host-pkgs/` with its own XBPS repository index. The package filename is `<name>-<version>_<revision>.<host-arch>.xbps`, where `<host-arch>` is the build machine's architecture (`uname -m`) - host tools are native to the build machine, so this is independent of `JINX_ARCH` (the target arch). When a recipe needs host dependencies, Jinx `xbps-install`s them on the fly into the build container's `/usr/local` during container preparation, exactly the way normal `deps` are installed into the sysroot; `hostrundeps` are recorded as the host package's XBPS run-dependencies. A host recipe that owns its source gets the same `.version` and `.revision` stamps that a normal recipe does, in `host-sources/`. Consequently a `version`/`revision` bump on a host recipe triggers a rebuild, and [`update`](<#update>)/[`closure`](<#closure>)/[`build`](<#build>)/[`rebuild`](<#rebuild>) treat host recipes by their XBPS file identically to normal recipes.
 
 >[!warning]
 >Linking against dynamic shared libraries *may* have unexpected behaviour when the resulting binary is run from the host: it could try to load a library that is not installed on the host. Static linking, or relying solely on libraries provided by `imagedeps`, is the safer route.

@@ -1376,7 +1376,6 @@ clean_sources() {
     force_remove "${base_dir}"/${_sources_root}/$1.patched
     force_remove "${base_dir}"/${_sources_root}/$1.prepared
     force_remove "${base_dir}"/${_sources_root}/$1.revision
-    force_remove "${base_dir}"/${_sources_root}/$1.host-revision
 }
 
 do_source() {
@@ -1399,6 +1398,11 @@ do_source() {
 
     local _need_fetch=no
     if [[ ! -f "${base_dir}/${_sources_root}/$1.version" || $(cat "${base_dir}/${_sources_root}/$1.version") != "${version}" ]]; then
+        local _need_fetch=yes
+    fi
+    # A new revision may come with new patches, which only a fresh tree takes,
+    # whichever of the recipes that share the source builds first.
+    if [[ -f "${base_dir}/${_sources_root}/$1.revision" && $(cat "${base_dir}/${_sources_root}/$1.revision") != "${revision}" ]]; then
         local _need_fetch=yes
     fi
     # Re-clone a managed clone whose working tree was removed, even if .version matches.
@@ -1455,6 +1459,8 @@ do_source() {
             touch "${base_dir}"/${_sources_root}/'$1'.prepared
         '
     fi
+
+    echo "${revision}" >"${base_dir}/${_sources_root}/$1.revision"
 
     destroy_container
 }
@@ -1582,21 +1588,14 @@ do_pkg() {
     msg "Building ${_id} ${version}_${revision}"
 
     local _arch="${JINX_ARCH}"
-    local _revision_file="${base_dir}/${_sources_root}/${name}.revision"
     if [[ -n ${_kind} ]]; then
         _arch="${host_arch}"
-        _revision_file="${base_dir}/${_sources_root}/${name}.host-revision"
     fi
 
     local _pkg
     _pkg="$(pkg_file "${_recipes_dir}" "${name}")"
     if [[ ! -f ${_pkg} ]]; then
         force_remove "${build_dir}/${_kind}builds/${name}"
-        if [[ -z ${from_source} ]] \
-           && [[ -f ${_revision_file} ]] \
-           && [[ $(cat "${_revision_file}") != "${revision}" ]]; then
-            tracked_subshell 'clean_sources "${name}"'
-        fi
     fi
 
     if [[ -n ${from_source} ]]; then
@@ -1604,8 +1603,6 @@ do_pkg() {
     else
         tracked_subshell 'do_source "${name}" "${_recipes_dir}"'
     fi
-
-    echo "${revision}" >"${_revision_file}"
 
     if [[ -n ${_kind} ]]; then
         local cross_compile=yes
