@@ -2503,7 +2503,7 @@ cmd_install() {
     if [[ -n ${dup_elements} ]]; then
         error "duplicate files were found:"
         local elem owners
-        for elem in ${dup_elements}; do
+        while IFS= read -r elem; do
             owners=
             for pkg in ${pkgs_to_install}; do
                 owners+=$(tracked_subshell '
@@ -2515,7 +2515,7 @@ cmd_install() {
                 ')
             done
             msg2 "${elem}:${owners}"
-        done
+        done <<<"${dup_elements}"
         exit 1
     fi
 
