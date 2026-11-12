@@ -1391,14 +1391,6 @@ do_source() {
         return
     fi
 
-    local cross_compile=yes
-    local container_pkgs=
-    local sysroot=
-    local imgroot=
-    local container_sources_ro=
-    local container_base_dir_ro=
-    prepare_container
-
     local _need_fetch=no
     if [[ ! -f "${base_dir}/${_sources_root}/$1.version" || $(cat "${base_dir}/${_sources_root}/$1.version") != "${version}" ]]; then
         local _need_fetch=yes
@@ -1412,6 +1404,23 @@ do_source() {
     if [[ ${is_local_package} == true && -n ${git_url} && ! -d ${source_dir} ]]; then
         local _need_fetch=yes
     fi
+
+    # With nothing left to do, there is no point in preparing a container.
+    if [[ ${_need_fetch} == no \
+          && -f "${base_dir}/${_sources_root}/$1.patched" \
+          && -f "${base_dir}/${_sources_root}/$1.prepared" ]]; then
+        echo "${revision}" >"${base_dir}/${_sources_root}/$1.revision"
+        return
+    fi
+
+    local cross_compile=yes
+    local container_pkgs=
+    local sysroot=
+    local imgroot=
+    local container_sources_ro=
+    local container_base_dir_ro=
+    prepare_container
+
     if [[ ${_need_fetch} == yes ]]; then
         if [[ ${is_local_package} != true ]]; then
             msg2 "Fetching the source of $1"
