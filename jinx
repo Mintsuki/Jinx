@@ -1588,10 +1588,10 @@ do_pkg() {
     destroy_container
 
     local xbps_deps=""
-    local dep
+    local dep _dep_bootstrap
     for dep in ${deps}; do
-        local bootstrap_pkg=$(eval "$(include_recipe "${base_dir}"/recipes/${dep})" && echo "${bootstrap_pkg}")
-        if [[ ${bootstrap_pkg} == yes ]]; then
+        _dep_bootstrap=$(eval "$(include_recipe "${base_dir}"/recipes/${dep})" && echo "${bootstrap_pkg}")
+        if [[ ${_dep_bootstrap} == yes ]]; then
             continue
         fi
 
@@ -1610,8 +1610,8 @@ do_pkg() {
             fi
         done
 
-        local bootstrap_pkg=$(eval "$(include_recipe "${base_dir}"/recipes/${binpkgdep})" && echo "${bootstrap_pkg}")
-        if [[ ${bootstrap_pkg} == yes ]]; then
+        _dep_bootstrap=$(eval "$(include_recipe "${base_dir}"/recipes/${binpkgdep})" && echo "${bootstrap_pkg}")
+        if [[ ${_dep_bootstrap} == yes ]]; then
             continue
         fi
 
