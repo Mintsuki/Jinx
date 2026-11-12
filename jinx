@@ -1542,10 +1542,13 @@ jinx_do_regen() {
     fi
     [[ -f "${base_dir}/${_sources_root}/$1.patched" ]] || die "cannot regenerate non-built package"
 
+    jinx_msg "Regenerating the source of $1"
+
     jinx_make_temp
     local patch_file="${tmp}"
 
     if [[ ${is_local_package} != true ]]; then
+        jinx_msg2 "Writing the working patch of $1"
         cd "${base_dir}/${_sources_root}"
 
         # Version control data stays out of the patch. It is moved aside next
@@ -1602,6 +1605,7 @@ jinx_do_regen() {
     local container_sources_ro=
     local container_base_dir_ro=
     jinx_prepare_container
+    jinx_msg2 "Running prepare() for $1"
     jinx_run_in_container internal-prepare "$1" "$2"
     jinx_destroy_container
 
@@ -2292,6 +2296,12 @@ jinx_cmd_run_in() {
 
         eval "$(jinx_include_recipe "${base_dir}"/${recipes_dir}/${run_in_recipe})"
 
+        if [[ ${recipes_dir} == host-recipes ]]; then
+            jinx_msg "Running $1 in the container of host:${name}"
+        else
+            jinx_msg "Running $1 in the container of ${name}"
+        fi
+
         if [[ -n ${from_source} ]]; then
             jinx_tracked_subshell 'jinx_do_source "${from_source}" "${_from_source_dir}"'
         else
@@ -2481,6 +2491,7 @@ jinx_cmd_revbump() {
         return
     fi
 
+    jinx_msg "Bumping the revision of what depends on $*"
     local i
     for i in "${!bump_nodes[@]}"; do
         # Written through, so that the recipe keeps its mode and owner.
