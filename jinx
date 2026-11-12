@@ -177,12 +177,12 @@ jinx_cmd_init() {
     local builddir
 
     if [[ -f "${dir}/Jinxfile" ]]; then
-        # <dir> is the source directory; the current directory is the build directory.
+        # <dir> is the source directory, the current one the build directory.
         local srcdir="${dir}"
         local builddir
         builddir="$(pwd -P)"
     elif [[ -f Jinxfile ]]; then
-        # The current directory is the source; <dir> is a build directory to create.
+        # The current directory is the source, <dir> a build directory to make.
         if [[ -e "${dir}" ]]; then
             die "'${dir}' already exists; when the current directory is the source, <dir> must be a new directory to create as the build directory"
         fi
@@ -200,7 +200,7 @@ jinx_cmd_init() {
     fi
 
     if [[ -f "${builddir}/Jinxfile" ]]; then
-        die "In-tree builds are not supported"
+        die "in-tree builds are not supported"
     fi
 
     {
@@ -366,7 +366,7 @@ apt_cache="$JINX_CACHE_DIR/apt-cache"
 if [[ ${in_container} == false ]]; then
     tmp_dir="${JINX_CACHE_DIR}/tmp"
 else
-    # jinx_run_in_container mounts the cache's tmp/ here, wherever the cache is.
+    # jinx_run_in_container mounts the tmp/ of the cache here, wherever it is.
     tmp_dir=/jinx-tmp
 fi
 
@@ -617,7 +617,7 @@ jinx_topo_sort() {
     local _node _deps
     while IFS=: read -r _node _deps; do
         [[ -z $_node ]] && continue
-        # first occurrence wins
+        # The first occurrence wins.
         [[ -n ${_graph[$_node]+x} ]] || _graph[$_node]=$_deps
     done <<<"$1"
 
@@ -694,7 +694,8 @@ jinx_recipe_info() {
 }
 
 jinx_get_source_deps() {
-    # Source-level deps of recipe $1 in $2, as '<source_hostdeps>|<source_deps>'.
+    # The source-level deps of recipe $1 in $2, as
+    # '<source_hostdeps>|<source_deps>'.
     # A recipe using from_source/from_host_source borrows them from the recipe
     # owning the source; source_hostdeps always resolve in host-recipes/ and
     # source_deps in recipes/, whichever namespace the source recipe lives in.
@@ -738,8 +739,8 @@ jinx_get_deps_file() {
     done
 }
 
-# Runs the command $2... with its output held back, which only gets shown, after
-# the error message $1, if the command fails.
+# Runs the command $2... with its output held back, which only gets shown,
+# after the error message $1, if the command fails.
 jinx_run_quietly() {
     jinx_make_temp
     local log="${tmp}"
@@ -786,7 +787,7 @@ jinx_run_in_container1() {
             LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:/usr/lib64:/usr/lib \
             DEBIAN_FRONTEND=noninteractive \
             $(for arg in "$@"; do printf '"%s" \\\n' "${arg//\"/\\\"}"; done)
-            # keep this whitespace
+            # This line ends the line continuation after the last argument.
         '
     "
 
@@ -887,7 +888,8 @@ jinx_prepare_container() {
 
             jinx_run_in_container1 "$JINX_CACHE_DIR/sets/${pkgset}.image" apt-get install -y "${pkg}"
 
-            # Fix permissions of files
+            # Some packages install files without any permissions, which would
+            # keep even their owner, the user, from reading them.
             find "$JINX_CACHE_DIR/sets/${pkgset}.image" -perm 000 -exec chmod 755 {} + 2>/dev/null
 
             touch "$JINX_CACHE_DIR/sets/${pkgset}.image/.jinx-set-valid"
@@ -1021,7 +1023,7 @@ jinx_run_in_container() {
             JINX_PARALLELISM=${parallelism} \
             /bin/bash /jinx \
             $(for arg in "$@"; do printf '"%s" \\\n' "${arg//\"/\\\"}"; done)
-            # keep this whitespace
+            # This line ends the line continuation after the last argument.
         '
     "
 
@@ -1034,9 +1036,9 @@ jinx_destroy_container() {
     jinx_force_remove ${container_pkgs:+"${container_pkgs}"} "${sysroot}"
 }
 
+# Clones the source of the recipe into $1, by default its place in sources/; if
+# $2 is full, the clone is a full one whatever shallow says.
 jinx_do_git_fetch() {
-    # $1: clone destination (default: the recipe's sources/ slot).
-    # $2: "full" forces a full clone regardless of the shallow property.
     local _dest="${1:-${base_dir}/${_sources_root}/${name}}"
     local _force_full="${2:-}"
 
@@ -1187,8 +1189,9 @@ EOF
         printf 'local source_dir=%q\n' "${base_dir}/${_sources_root}/${name}"
     else
         local _real_path="${base_dir}/${source_dir}"
-        # A managed clone (git_url also set) may not exist yet; it gets cloned on
-        # first fetch. A plain local package's source_dir must already exist.
+        # A managed clone (git_url also set) may not exist yet; it gets cloned
+        # on the first fetch. A plain local package's source_dir must already
+        # exist.
         if [[ -z ${git_url} && ! -d ${_real_path} ]]; then
             printf 'die %q\n' "recipe '${name}': source_dir '${source_dir}' does not exist"
             return 1
@@ -1231,9 +1234,10 @@ jinx_do_fetch() {
     local sysroot=/sysroot
 
     if [[ ${is_local_package} == true ]]; then
-        # Managed clone: a local package with a git_url is cloned into source_dir
-        # once and then used in place. An existing tree is never re-cloned (remove
-        # it to start fresh); plain local and sourceless packages have no git_url.
+        # Managed clone: a local package with a git_url is cloned into
+        # source_dir once and then used in place. An existing tree is never
+        # cloned again (remove it to start fresh); plain local and sourceless
+        # packages have no git_url.
         if [[ -n ${git_url} && ! -d ${source_dir} ]]; then
             jinx_do_git_fetch "${source_dir}" full
         fi
@@ -1365,7 +1369,7 @@ jinx_do_stage() {
             ;;
         package)
             package
-            # Remove libtool files
+            # Libtool archives cause more trouble than they solve.
             find "${dest_dir}${prefix}" -name "*.la" -exec rm -rvf {} +
             ;;
         run-in)
@@ -1379,11 +1383,11 @@ jinx_do_stage() {
     cd "${base_dir}"
 }
 
+# Does any recipe sharing source $1 (rooted at $2) keep its build directory?
+# Such a directory was configured out of tree and still names the source as
+# srcdir, so reaping it would leave the tree unusable. Only a recipe assigning
+# clean_workdirs keeps one, which is what grep narrows to.
 jinx_source_is_pinned() {
-    # Does any recipe sharing source $1 (rooted at $2) keep its build directory?
-    # Such a directory was configured out of tree and still names the source as
-    # srcdir, so reaping it would leave the tree unusable. Only a recipe assigning
-    # clean_workdirs keeps one, which is what grep narrows to.
     local _src="$1"
     local _root="$2"
 
@@ -1439,7 +1443,8 @@ jinx_do_source() {
     if [[ -f "${base_dir}/${_sources_root}/$1.revision" && $(cat "${base_dir}/${_sources_root}/$1.revision") != "${revision}" ]]; then
         local _need_fetch=yes
     fi
-    # Re-clone a managed clone whose working tree was removed, even if .version matches.
+    # A managed clone whose working tree was removed gets cloned again, even if
+    # .version matches.
     if [[ ${is_local_package} == true && -n ${git_url} && ! -d ${source_dir} ]]; then
         local _need_fetch=yes
     fi
@@ -1897,14 +1902,14 @@ jinx_do_update() {
     local pkg
     pkg="$(jinx_pkg_file recipes "$1")"
 
-    # Up to date already? Nothing to do.
     if [[ -f ${pkg} ]]; then
         return 0
     fi
 
     eval "$(jinx_include_recipe "${base_dir}"/recipes/$1)"
 
-    # Not previously built? Skip unless caller asked to build missing ones.
+    # Only what was built before gets updated, unless missing packages are
+    # asked for too.
     if [[ ${with_build} != yes ]] && ! jinx_pkg_previously_built "${name}" "${build_dir}/pkgs" "${JINX_ARCH}"; then
         return 0
     fi
@@ -1931,12 +1936,12 @@ jinx_do_host_update() {
     local pkg
     pkg="$(jinx_pkg_file host-recipes "$1")"
 
-    # Up to date already? Nothing to do.
     if [[ -f ${pkg} ]]; then
         return 0
     fi
 
-    # Not previously built? Skip unless caller asked to build missing ones.
+    # Only what was built before gets updated, unless missing packages are
+    # asked for too.
     if [[ ${with_build} != yes ]] && ! jinx_pkg_previously_built "$1" "${build_dir}/host-pkgs" "${host_arch}"; then
         return 0
     fi
@@ -2080,8 +2085,9 @@ jinx_cmd_closure() {
     jinx_closure_of "${missing_only}" ${pkgs}
 }
 
+# Downloads the packages of recipes $5... from $2 (recipes or host-recipes),
+# with what they need, for arch $4 from the repository at $1 into $3.
 jinx_cmd_download_for() {
-    # Args: repo_url recipes_dir pkgs_dir arch name1 [name2 ...]
     local repo_url="$1"
     local recipes_dir="$2"
     local pkgs_dir="$3"
@@ -2134,7 +2140,6 @@ jinx_cmd_download_for() {
         jinx_collect_all_deps "${pkg}"
     done
 
-    # Determine which packages are missing locally
     local download_list=""
     local dep pkg
     for dep in "${!collected[@]}"; do
@@ -2145,11 +2150,11 @@ jinx_cmd_download_for() {
     done
 
     if [[ -z ${download_list} ]]; then
-        jinx_msg "All requested ${recipes_dir} packages are already in ${pkgs_dir##*/}/"
+        jinx_msg "Every package requested is already in ${pkgs_dir##*/}/"
         return
     fi
 
-    # Fetch repo index for checksum verification
+    # It has the checksums to verify the downloads against.
     jinx_msg "Fetching the ${arch} repository index"
     jinx_make_temp
     local repodata_path="${tmp}"
@@ -2160,7 +2165,6 @@ jinx_cmd_download_for() {
     local index_plist="${tmp}"
     zstdcat "${repodata_path}" | tar -xOf - index.plist >"${index_plist}"
 
-    # Download each missing package
     local -a dl_names=() dl_paths=() dl_dests=()
     local file_name
     for file_name in ${download_list}; do
@@ -2307,8 +2311,9 @@ jinx_cmd_run_in() {
         local sysroot=
         local imgroot=
         if [[ ${recipes_dir} == host-recipes ]]; then
-            # Host recipes always use the cross-compile flow, regardless of
-            # JINX_NATIVE_MODE (host_arch sysroot at /sysroot, host pkgs at /usr/local).
+            # Host recipes always use the cross-compile flow, whatever
+            # JINX_NATIVE_MODE says (host_arch sysroot at /sysroot, host
+            # packages at /usr/local).
             local cross_compile=yes
         fi
         jinx_prepare_container
@@ -2363,9 +2368,10 @@ jinx_next_revision() {
     echo "$(($1 + 1))"
 }
 
+# Writes recipe $1, which $2 names in errors, with its revision incremented to
+# the temporary file named by revbump_out, and sets revbump_old to its old
+# revision.
 jinx_revbump_one_recipe() {
-    # Write the recipe with its revision incremented to the temporary file
-    # revbump_out, and its old revision to revbump_old.
     local recipe_file="$1"
     local label="$2"
 
@@ -2382,13 +2388,12 @@ jinx_revbump_one_recipe() {
     revbump_old="${matched_value}"
 }
 
+# Bumps the revision of every recipe that depends, directly or transitively, on
+# the given packages. Targets and dependents may be normal recipes or host
+# recipes (selected with the 'host:' prefix). 'deps'/'builddeps' and
+# 'source_deps' resolve in recipes/, 'hostdeps'/'hostrundeps' and
+# 'source_hostdeps' in host-recipes/, so the graph spans both namespaces.
 jinx_cmd_revbump() {
-    # Bump the revision of every recipe that depends, directly or
-    # transitively, on the given package(s). Targets and dependents may be
-    # normal recipes or host recipes (selected with the 'host:' prefix).
-    # 'deps'/'builddeps' and 'source_deps' resolve in recipes/,
-    # 'hostdeps'/'hostrundeps' and 'source_hostdeps' in host-recipes/, so the
-    # graph spans both namespaces.
     if [[ -z ${1-} ]]; then
         die "revbump requires at least one package name"
     fi
@@ -2414,8 +2419,9 @@ jinx_cmd_revbump() {
                 revdeps["${depinfo_lines[2]}"]+=" ${node}"
             fi
 
-            # Preparing the source is part of building the package, so what the
-            # source step needs is a revbump edge just like what the build does.
+            # Preparing the source is part of building the package, so what
+            # the source step needs is a revbump edge just like what the build
+            # does.
             local srcpair
             srcpair="$(jinx_get_source_deps "${pkg}" "${nsdir}")"
             local rhost_line="${rhost_line} ${srcpair%%|*}"
@@ -2617,8 +2623,7 @@ jinx_reinit_container() {
 
     mkdir -p "$JINX_CACHE_DIR/sets/.image"
 
-    # Fetch the pre-built nochown.so for this host arch, verify, drop it into
-    # the container's rootfs so the LD_PRELOAD references at /nochown.so work.
+    # Every container preloads it as /nochown.so.
     local nochown_sha256="${NOCHOWN_SHA256[${host_arch}]-}"
     if [[ -z ${nochown_sha256} || ${nochown_sha256} == "?" ]]; then
         die "no pre-built nochown.so published for host arch '${host_arch}' (see NOCHOWN_SHA256 in jinx)"
@@ -2628,11 +2633,10 @@ jinx_reinit_container() {
         die "failed to verify nochown.so"
     fi
 
-    # Fetch the pre-built static-musl xbps tarball for this host arch from the
-    # xbps-static-builds CI repo, verify, extract. Building xbps locally is
-    # avoided because Debian doesn't ship musl-linked libssl/libarchive/etc.,
-    # and statically linked glibc breaks libfetch's networking via NSS. This
-    # comes before the image, so that a failed download does not cost one.
+    # A pre-built xbps, as Debian ships no musl-linked libssl, libarchive, and
+    # so on to build one against, and a statically linked glibc breaks the
+    # networking of libfetch through NSS. It comes before the image, so that a
+    # failed download does not cost one.
     local xbps_sha256="${XBPS_SHA256[${host_arch}]-}"
     if [[ -z ${xbps_sha256} || ${xbps_sha256} == "?" ]]; then
         die "no pre-built xbps tarball published for host arch '${host_arch}' (see XBPS_SHA256 in jinx)"
@@ -2712,10 +2716,10 @@ done
 EOF
     chmod 0755 "${JINX_CACHE_DIR}/bin/ar"
 
-    # Install debootstrap. Upstream ships the install step as a Makefile
-    # target, but it is only a few copies plus a @VERSION@ substitution, so do
-    # it inline and keep make out of the prerequisites. The version is taken
-    # from debian/changelog exactly the way that Makefile takes it.
+    # Upstream installs debootstrap through a Makefile target, but that is only
+    # a few copies and a @VERSION@ substitution, done here to keep make out of
+    # the prerequisites, with the version taken from debian/changelog the way
+    # the Makefile takes it.
     jinx_tracked_subshell '
         cd "${JINX_CACHE_DIR}"
         jinx_make_temp -d
@@ -2774,7 +2778,8 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
     jinx_run_in_container1 "$JINX_CACHE_DIR/sets/.image" apt-get install -y locales
     jinx_run_in_container1 "$JINX_CACHE_DIR/sets/.image" locale-gen
 
-    # Fix permissions of files
+    # Some packages install files without any permissions, which would keep
+    # even their owner, the user, from reading them.
     find "$JINX_CACHE_DIR/sets/.image" -perm 000 -exec chmod 755 {} + 2>/dev/null
 
     jinx_run_in_container1 "$JINX_CACHE_DIR/sets/.image" apt-get install -y bash bzip2 ca-certificates curl diffutils findutils gawk git grep gzip lzip netbase patch procps sed tar unzip xz-utils zstd ${JINX_BASE_PACKAGES-}
@@ -2813,11 +2818,11 @@ jinx_redo_first_use() {
         jinx_msg "Purging the old Jinx cache"
     fi
 
-    # Everything except the lock file, and the downloaded archives, which do not
-    # depend on anything that the cache gets rebuilt for. The lock file is held
-    # open right now, and removing it drops the mutual exclusion for the rest of
-    # this run and leaves the next run - possibly a 'jinx install' as root - to
-    # recreate it.
+    # Everything except the lock file, and the downloaded archives, which do
+    # not depend on anything that the cache gets rebuilt for. The lock file is
+    # held open right now, and removing it drops the mutual exclusion for the
+    # rest of this run and leaves the next run - possibly a 'jinx install' as
+    # root - to create it again.
     local -a _stale=()
     local _entry
     for _entry in "${JINX_CACHE_DIR}"/* "${JINX_CACHE_DIR}"/.[!.]*; do
@@ -2833,8 +2838,8 @@ jinx_redo_first_use() {
     jinx_first_use
 }
 
-# A cache that root rebuilt would lock its owner out of it, so as root, have the
-# user owning the cache directory rebuild it.
+# A cache that root rebuilt would lock its owner out of it, so as root, have
+# the user owning the cache directory rebuild it.
 jinx_rebuild_cache_as_owner() {
     local owner
     owner="$(stat -c '%u:%g' "${JINX_CACHE_DIR}")"
