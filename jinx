@@ -637,8 +637,6 @@ prepare_container() {
     done
 
     make_temp -d
-    container_pkgs="${tmp}"
-    make_temp -d
     sysroot="${tmp}"
 
     make_temp
@@ -818,7 +816,8 @@ run_in_container() {
 }
 
 destroy_container() {
-    force_remove "${container_pkgs}" "${sysroot}"
+    # Native builds have no separate host packages.
+    force_remove ${container_pkgs:+"${container_pkgs}"} "${sysroot}"
 }
 
 do_git_fetch() {
