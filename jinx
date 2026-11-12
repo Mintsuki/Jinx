@@ -546,7 +546,7 @@ build_hostdeps() {
         [[ -f "${base_dir}/host-recipes/${hostdep}/recipe" ]] || die "missing host dependency '${hostdep}' for recipe '${name}'"
 
         tracked_subshell '
-            do_host_build_if_needed ${hostdep}
+            do_build_if_needed host-recipes "${hostdep}"
         '
     done
 }
@@ -751,7 +751,7 @@ prepare_container() {
             [[ -n ${_deps_collected[$_bpd]+x} ]] && continue
             [[ ${_bpd} == "${name}" ]] && continue
             tracked_subshell '
-                do_build_if_needed "${_bpd}"
+                do_build_if_needed recipes "${_bpd}"
             '
         done
     done
@@ -1447,16 +1447,11 @@ do_source() {
     destroy_container
 }
 
+# Builds the package of recipe $2 from $1 (recipes or host-recipes) anew.
 do_rebuild() {
-    force_remove "${build_dir}"/builds/"$1"
+    force_remove "${build_dir}/${1%recipes}builds/$2"
 
-    do_pkg "$1"
-}
-
-do_host_rebuild() {
-    force_remove "${build_dir}"/host-builds/"$1"
-
-    do_host_pkg "$1"
+    do_pkg "$1" "$2"
 }
 
 do_regen() {
@@ -1542,116 +1537,51 @@ do_regen() {
     touch "${base_dir}"/${_sources_root}/$1.prepared
 }
 
-do_host_pkg() {
-    enter_build "host:$1"
-    eval "$(include_recipe "${base_dir}"/host-recipes/$1)"
-
+# Prints the path of the package that recipe $2 from $1 (recipes or
+# host-recipes) builds.
+pkg_file() {
+    eval "$(include_recipe "${base_dir}/$1/$2")"
     if [[ -n ${from_source} ]]; then
-        local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+        version="$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "${version}")"
     fi
-
-    msg "Building host:${name} ${version}_${revision}"
-
-    if [[ ! -f "${build_dir}/host-pkgs/${name}-${version}_${revision}.${host_arch}.xbps" ]]; then
-        force_remove "${build_dir}"/host-builds/"$1"
-        if [[ -z ${from_source} ]] \
-           && [[ -f "${base_dir}/${_sources_root}/$1.host-revision" ]] \
-           && [[ $(cat "${base_dir}/${_sources_root}/$1.host-revision") != "${revision}" ]]; then
-            tracked_subshell 'clean_sources "${name}"'
-        fi
-    fi
-
-    if [[ -n ${from_source} ]]; then
-        tracked_subshell 'do_source "${from_source}" "${_from_source_dir}"'
+    if [[ $1 == host-recipes ]]; then
+        echo "${build_dir}/host-pkgs/${name}-${version}_${revision}.${host_arch}.xbps"
     else
-        tracked_subshell 'do_source "${name}" host-recipes'
-    fi
-
-    echo "${revision}" >"${base_dir}"/${_sources_root}/$1.host-revision
-
-    local cross_compile=yes
-    local container_pkgs=
-    local sysroot=
-    local imgroot=
-    local container_base_dir_ro=
-    prepare_container
-
-    local container_sources_ro=yes
-    if [[ ! -d "${build_dir}/host-builds/$1" ]]; then
-        msg2 "Running configure()"
-        run_in_container internal-stage host-recipes configure "$1"
-    fi
-    msg2 "Running build()"
-    run_in_container internal-stage host-recipes build "$1"
-    force_remove "${build_dir}"/host-pkgs/$1
-    msg2 "Running package()"
-    run_in_container internal-stage host-recipes package "$1"
-
-    destroy_container
-
-    local xbps_deps=""
-    local hostrundep
-    for hostrundep in ${hostrundeps}; do
-        local xbps_deps="${xbps_deps} ${hostrundep}>=0.0"
-    done
-
-    local dest_dir="${build_dir}/host-pkgs/${name}"
-
-    msg2 "Creating the package"
-    cd "${build_dir}"/host-pkgs
-        XBPS_ARCH=invalid \
-        XBPS_TARGET_ARCH="${host_arch}" \
-    xbps-create \
-        -A ${host_arch} \
-        -s ${name} \
-        -n ${name}-${version}_${revision} \
-        -D "${xbps_deps}" \
-        -F "${conf_files}" \
-        "${dest_dir}"
-
-    force_remove "${dest_dir}"
-
-        XBPS_ARCH=invalid \
-        XBPS_TARGET_ARCH="${host_arch}" \
-    xbps-rindex \
-        -a "${build_dir}"/host-pkgs/${name}-${version}_${revision}.${host_arch}.xbps \
-        -f
-
-    if [[ ${JINX_CLEAN_WORKDIRS} == yes ]]; then
-        if [[ ${clean_workdirs} != no ]]; then
-            force_remove "${build_dir}"/host-builds/$1
-
-            # Only the recipe that owns a source may reap it; a from_source
-            # recipe borrows a tree the owner and other borrowers still need.
-            if [[ -z ${from_source} ]]; then
-                eval "$(source_source_recipe "$1" host-recipes)"
-
-                eval "$(get_real_source_dir)"
-
-                if [[ ${is_sourceless_package} != true && ${is_local_package} != true ]] \
-                   && ! source_is_pinned "${name}" "${_sources_root}"; then
-                    clean_sources "${name}"
-                fi
-            fi
-        fi
+        echo "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps"
     fi
 }
 
+# Builds the package of recipe $2 from $1 (recipes or host-recipes).
 do_pkg() {
-    enter_build "$1"
-    eval "$(include_recipe "${base_dir}"/recipes/$1)"
+    local _recipes_dir="$1"
+    local _kind="${1%recipes}"
+    local _id="$2"
+    if [[ -n ${_kind} ]]; then
+        _id="host:$2"
+    fi
+    enter_build "${_id}"
+    eval "$(include_recipe "${base_dir}/${_recipes_dir}/$2")"
 
     if [[ -n ${from_source} ]]; then
         local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
     fi
 
-    msg "Building ${name} ${version}_${revision}"
+    msg "Building ${_id} ${version}_${revision}"
 
-    if [[ ! -f "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" ]]; then
-        force_remove "${build_dir}"/builds/"$1"
+    local _arch="${JINX_ARCH}"
+    local _revision_file="${base_dir}/${_sources_root}/${name}.revision"
+    if [[ -n ${_kind} ]]; then
+        _arch="${host_arch}"
+        _revision_file="${base_dir}/${_sources_root}/${name}.host-revision"
+    fi
+
+    local _pkg
+    _pkg="$(pkg_file "${_recipes_dir}" "${name}")"
+    if [[ ! -f ${_pkg} ]]; then
+        force_remove "${build_dir}/${_kind}builds/${name}"
         if [[ -z ${from_source} ]] \
-           && [[ -f "${base_dir}/${_sources_root}/$1.revision" ]] \
-           && [[ $(cat "${base_dir}/${_sources_root}/$1.revision") != "${revision}" ]]; then
+           && [[ -f ${_revision_file} ]] \
+           && [[ $(cat "${_revision_file}") != "${revision}" ]]; then
             tracked_subshell 'clean_sources "${name}"'
         fi
     fi
@@ -1659,11 +1589,14 @@ do_pkg() {
     if [[ -n ${from_source} ]]; then
         tracked_subshell 'do_source "${from_source}" "${_from_source_dir}"'
     else
-        tracked_subshell 'do_source "${name}" recipes'
+        tracked_subshell 'do_source "${name}" "${_recipes_dir}"'
     fi
 
-    echo "${revision}" >"${base_dir}"/${_sources_root}/$1.revision
+    echo "${revision}" >"${_revision_file}"
 
+    if [[ -n ${_kind} ]]; then
+        local cross_compile=yes
+    fi
     local container_pkgs=
     local sysroot=
     local imgroot=
@@ -1671,57 +1604,64 @@ do_pkg() {
     prepare_container
 
     local container_sources_ro=yes
-    if [[ ! -d "${build_dir}/builds/$1" ]]; then
+    if [[ ! -d "${build_dir}/${_kind}builds/${name}" ]]; then
         msg2 "Running configure()"
-        run_in_container internal-stage recipes configure "$1"
+        run_in_container internal-stage "${_recipes_dir}" configure "${name}"
     fi
     msg2 "Running build()"
-    run_in_container internal-stage recipes build "$1"
-    force_remove "${build_dir}"/pkgs/$1
+    run_in_container internal-stage "${_recipes_dir}" build "${name}"
+    force_remove "${build_dir}/${_kind}pkgs/${name}"
     msg2 "Running package()"
-    run_in_container internal-stage recipes package "$1"
+    run_in_container internal-stage "${_recipes_dir}" package "${name}"
 
     destroy_container
 
     local xbps_deps=""
-    local dep _dep_bootstrap
-    for dep in ${deps}; do
-        _dep_bootstrap=$(eval "$(include_recipe "${base_dir}"/recipes/${dep})" && echo "${bootstrap_pkg}")
-        if [[ ${_dep_bootstrap} == yes ]]; then
-            continue
-        fi
-
-        local xbps_deps="${xbps_deps} ${dep}>=0.0"
-    done
-
-    local binpkgdep
-    for binpkgdep in ${binpkgdeps}; do
-        [[ -f "${base_dir}/recipes/${binpkgdep}/recipe" ]] \
-            || die "binpkgdeps entry '${binpkgdep}' of recipe '${name}' is not a recipe"
-
-        local _dupe
-        for _dupe in ${deps} ${builddeps}; do
-            if [[ ${binpkgdep} == "${_dupe}" ]]; then
-                die "recipe '${name}' lists '${binpkgdep}' in both binpkgdeps and deps/builddeps; binpkgdeps is only for a runtime dependency whose build-order edge would otherwise create a cycle"
+    if [[ -n ${_kind} ]]; then
+        local hostrundep
+        for hostrundep in ${hostrundeps}; do
+            xbps_deps="${xbps_deps} ${hostrundep}>=0.0"
+        done
+    else
+        local dep _dep_bootstrap
+        for dep in ${deps}; do
+            _dep_bootstrap=$(eval "$(include_recipe "${base_dir}"/recipes/${dep})" && echo "${bootstrap_pkg}")
+            if [[ ${_dep_bootstrap} == yes ]]; then
+                continue
             fi
+
+            xbps_deps="${xbps_deps} ${dep}>=0.0"
         done
 
-        _dep_bootstrap=$(eval "$(include_recipe "${base_dir}"/recipes/${binpkgdep})" && echo "${bootstrap_pkg}")
-        if [[ ${_dep_bootstrap} == yes ]]; then
-            continue
-        fi
+        local binpkgdep
+        for binpkgdep in ${binpkgdeps}; do
+            [[ -f "${base_dir}/recipes/${binpkgdep}/recipe" ]] \
+                || die "binpkgdeps entry '${binpkgdep}' of recipe '${name}' is not a recipe"
 
-        local xbps_deps="${xbps_deps} ${binpkgdep}>=0.0"
-    done
+            local _dupe
+            for _dupe in ${deps} ${builddeps}; do
+                if [[ ${binpkgdep} == "${_dupe}" ]]; then
+                    die "recipe '${name}' lists '${binpkgdep}' in both binpkgdeps and deps/builddeps; binpkgdeps is only for a runtime dependency whose build-order edge would otherwise create a cycle"
+                fi
+            done
 
-    local dest_dir="${build_dir}/pkgs/${name}"
+            _dep_bootstrap=$(eval "$(include_recipe "${base_dir}"/recipes/${binpkgdep})" && echo "${bootstrap_pkg}")
+            if [[ ${_dep_bootstrap} == yes ]]; then
+                continue
+            fi
+
+            xbps_deps="${xbps_deps} ${binpkgdep}>=0.0"
+        done
+    fi
+
+    local dest_dir="${build_dir}/${_kind}pkgs/${name}"
 
     msg2 "Creating the package"
-    cd "${build_dir}"/pkgs
+    cd "${build_dir}/${_kind}pkgs"
         XBPS_ARCH=invalid \
-        XBPS_TARGET_ARCH="${JINX_ARCH}" \
+        XBPS_TARGET_ARCH="${_arch}" \
     xbps-create \
-        -A $JINX_ARCH \
+        -A ${_arch} \
         -s ${name} \
         -n ${name}-${version}_${revision} \
         -D "${xbps_deps}" \
@@ -1731,19 +1671,19 @@ do_pkg() {
     force_remove "${dest_dir}"
 
         XBPS_ARCH=invalid \
-        XBPS_TARGET_ARCH="${JINX_ARCH}" \
+        XBPS_TARGET_ARCH="${_arch}" \
     xbps-rindex \
-        -a "${build_dir}"/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps \
+        -a "${_pkg}" \
         -f
 
     if [[ ${JINX_CLEAN_WORKDIRS} == yes ]]; then
         if [[ ${clean_workdirs} != no ]]; then
-            force_remove "${build_dir}"/builds/$1
+            force_remove "${build_dir}/${_kind}builds/${name}"
 
             # Only the recipe that owns a source may reap it; a from_source
             # recipe borrows a tree the owner and other borrowers still need.
             if [[ -z ${from_source} ]]; then
-                eval "$(source_source_recipe "$1" recipes)"
+                eval "$(source_source_recipe "${name}" "${_recipes_dir}")"
 
                 eval "$(get_real_source_dir)"
 
@@ -1801,40 +1741,20 @@ cmd_build() {
     pkgs="$(expand_recipes "$@")"
     for pkg in ${pkgs}; do
         if [[ ${pkg} == host:* ]]; then
-            tracked_subshell 'do_host_pkg "${pkg#host:}"'
+            tracked_subshell 'do_pkg host-recipes "${pkg#host:}"'
         else
-            tracked_subshell 'do_pkg "${pkg}"'
+            tracked_subshell 'do_pkg recipes "${pkg}"'
         fi
     done
 }
 
+# Builds the package of recipe $2 from $1 (recipes or host-recipes) if it is
+# missing.
 do_build_if_needed() {
-    eval "$(include_recipe "${base_dir}"/recipes/$1)"
-    if [[ -n ${from_source} ]]; then
-        local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-    fi
-
-    if [[ ! -f "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" ]]; then
-        tracked_subshell 'do_pkg "'$1'"'
-    fi
-}
-
-host_pkg_filename() {
-    eval "$(include_recipe "${base_dir}"/host-recipes/$1)"
-    if [[ -n ${from_source} ]]; then
-        local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-    fi
-    echo "${name}-${version}_${revision}.${host_arch}.xbps"
-}
-
-do_host_build_if_needed() {
-    eval "$(include_recipe "${base_dir}"/host-recipes/$1)"
-    if [[ -n ${from_source} ]]; then
-        local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-    fi
-
-    if [[ ! -f "${build_dir}/host-pkgs/${name}-${version}_${revision}.${host_arch}.xbps" ]]; then
-        tracked_subshell 'do_host_pkg "'$1'"'
+    local pkg
+    pkg="$(pkg_file "$1" "$2")"
+    if [[ ! -f ${pkg} ]]; then
+        tracked_subshell 'do_pkg "'$1'" "'$2'"'
     fi
 }
 
@@ -1865,15 +1785,15 @@ pkg_previously_built() {
 do_update() {
     local with_build="$1"
     shift
-    eval "$(include_recipe "${base_dir}"/recipes/$1)"
-    if [[ -n ${from_source} ]]; then
-        local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-    fi
+    local pkg
+    pkg="$(pkg_file recipes "$1")"
 
     # Up to date already? Nothing to do.
-    if [[ -f "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" ]]; then
+    if [[ -f ${pkg} ]]; then
         return 0
     fi
+
+    eval "$(include_recipe "${base_dir}"/recipes/$1)"
 
     # Not previously built? Skip unless caller asked to build missing ones.
     if [[ ${with_build} != yes ]] && ! pkg_previously_built "${name}" "${build_dir}/pkgs" "${JINX_ARCH}"; then
@@ -1886,34 +1806,32 @@ do_update() {
 
     local hostdep
     for hostdep in "${!_hostdeps_collected[@]}"; do
-        tracked_subshell 'do_host_build_if_needed "${hostdep}"'
+        tracked_subshell 'do_build_if_needed host-recipes "${hostdep}"'
     done
     local builddeps_var="$(tracked_subshell 'get_builddeps "${name}"')"
     local dep
     for dep in ${builddeps_var}; do
-        tracked_subshell 'do_build_if_needed "${dep}"'
+        tracked_subshell 'do_build_if_needed recipes "${dep}"'
     done
 }
 
 do_host_update() {
     local with_build="$1"
     shift
-    eval "$(include_recipe "${base_dir}"/host-recipes/$1)"
-    if [[ -n ${from_source} ]]; then
-        local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-    fi
+    local pkg
+    pkg="$(pkg_file host-recipes "$1")"
 
     # Up to date already? Nothing to do.
-    if [[ -f "${build_dir}/host-pkgs/${name}-${version}_${revision}.${host_arch}.xbps" ]]; then
+    if [[ -f ${pkg} ]]; then
         return 0
     fi
 
     # Not previously built? Skip unless caller asked to build missing ones.
-    if [[ ${with_build} != yes ]] && ! pkg_previously_built "${name}" "${build_dir}/host-pkgs" "${host_arch}"; then
+    if [[ ${with_build} != yes ]] && ! pkg_previously_built "$1" "${build_dir}/host-pkgs" "${host_arch}"; then
         return 0
     fi
 
-    tracked_subshell 'do_host_pkg "'$1'"'
+    tracked_subshell 'do_pkg host-recipes "'$1'"'
 }
 
 cmd_update() {
@@ -2018,20 +1936,20 @@ cmd_closure() {
     local -a out=()
     local order
     order="$(topo_sort "${graph}")"
+    local pkg
     for node in ${order}; do
         if [[ ${node} == host/* ]]; then
-            if [[ ${missing_only} == yes \
-                  && -f "${build_dir}/host-pkgs/$(host_pkg_filename "${node#host/}")" ]]; then
-                continue
+            if [[ ${missing_only} == yes ]]; then
+                pkg="$(pkg_file host-recipes "${node#host/}")"
+                if [[ -f ${pkg} ]]; then
+                    continue
+                fi
             fi
             out+=("host:${node#host/}")
         else
             if [[ ${missing_only} == yes ]]; then
-                eval "$(include_recipe "${base_dir}"/recipes/"${node}")"
-                if [[ -n ${from_source} ]]; then
-                    local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-                fi
-                if [[ -f "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" ]]; then
+                pkg="$(pkg_file recipes "${node}")"
+                if [[ -f ${pkg} ]]; then
                     continue
                 fi
             fi
@@ -2055,7 +1973,7 @@ cmd_download_for() {
     # Collect transitive deps. Nothing is built here, so the only edges that
     # matter are the ones xbps itself records in a binary package: deps and
     # binpkgdeps for a normal recipe, hostrundeps for a host one, exactly what
-    # do_pkg and do_host_pkg hand to 'xbps-create -D'. Build-time edges
+    # do_pkg hands to 'xbps-create -D'. Build-time edges
     # (builddeps, hostdeps, and anything the source step needs) are irrelevant.
     local -A pkg_deps
     local -A bootstrap
@@ -2098,15 +2016,11 @@ cmd_download_for() {
 
     # Determine which packages are missing locally
     local download_list=""
-    local dep
+    local dep pkg
     for dep in "${!collected[@]}"; do
-        eval "$(include_recipe "${base_dir}"/${recipes_dir}/"${dep}")"
-        if [[ -n ${from_source} ]]; then
-            local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-        fi
-        local pkg_filename="${name}-${version}_${revision}.${arch}.xbps"
-        if [[ ! -f "${pkgs_dir}/${pkg_filename}" ]]; then
-            local download_list="${download_list} ${pkg_filename}"
+        pkg="$(pkg_file "${recipes_dir}" "${dep}")"
+        if [[ ! -f ${pkg} ]]; then
+            download_list="${download_list} ${pkg##*/}"
         fi
     done
 
@@ -2283,9 +2197,9 @@ cmd_rebuild() {
     pkgs="$(expand_recipes "$@")"
     for pkg in ${pkgs}; do
         if [[ ${pkg} == host:* ]]; then
-            tracked_subshell 'do_host_rebuild "${pkg#host:}"'
+            tracked_subshell 'do_rebuild host-recipes "${pkg#host:}"'
         else
-            tracked_subshell 'do_rebuild "${pkg}"'
+            tracked_subshell 'do_rebuild recipes "${pkg}"'
         fi
     done
 }
@@ -2487,17 +2401,14 @@ cmd_install() {
         msg "Installing ${pkg}"
 
         tracked_subshell '
-        eval "$(include_recipe "${base_dir}"/recipes/${pkg})"
+        local pkg_path
+        pkg_path="$(pkg_file recipes "${pkg}")"
 
-        if [[ -n ${from_source} ]]; then
-            local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-        fi
-
-        if [[ ! -f "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" ]]; then
+        if [[ ! -f ${pkg_path} ]]; then
             if [[ $(id -u) == 0 ]]; then
                 die "a package needs to be built, but Jinx was invoked as root"
             fi
-            tracked_subshell '\''do_pkg "${pkg}"'\''
+            tracked_subshell '\''do_pkg recipes "${pkg}"'\''
         fi
 
         # xbps seems to only install the package every second time when reinstalling.
@@ -2515,7 +2426,7 @@ cmd_install() {
             xbps-install -y $force_install -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} >"${install_log}" 2>&1 \
             || { error "failed to install ${pkg}:"; sed "s/^/    /" "${install_log}" >&2; exit 1; }
 
-        pkg_file_list "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" >>"${all_files}"
+        pkg_file_list "${pkg_path}" >>"${all_files}"
         '
     done
 
@@ -2539,13 +2450,9 @@ cmd_install() {
             owners=
             for pkg in ${pkgs_to_install}; do
                 owners+=$(tracked_subshell '
-                eval "$(include_recipe "${base_dir}"/recipes/${pkg})"
-
-                if [[ -n ${from_source} ]]; then
-                    local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
-                fi
-
-                if pkg_file_list "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" | grep -qxF -- "${elem}"; then
+                local pkg_path
+                pkg_path="$(pkg_file recipes "${pkg}")"
+                if pkg_file_list "${pkg_path}" | grep -qxF -- "${elem}"; then
                     printf " %s" "${pkg}"
                 fi
                 ')
