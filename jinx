@@ -139,6 +139,7 @@ jinx_cmd_help() {
     printf "\n   rebuild            Rebuilds package(s) from scratch, after what they need that is missing"
     printf "\n   revbump            Bumps the revision of all (transitive) dependents of package(s)"
     printf "\n   regenerate|regen   Regenerates the working patch of package(s) and re-runs prepare()"
+    printf "\n   purge              Deletes the source of package(s) and all Jinx keeps along with it"
     printf "\n   install            Installs package(s) (use '-f' to reinstall)"
     printf "\n   closure            Prints the package(s) and all they need, in build order; '-m': only the missing ones"
     printf "\n   download           Downloads pre-built package(s), and what they need, from a repository"
@@ -255,7 +256,7 @@ fi
 
 # Checked before anything below can take the lock or rebuild the cache.
 case "$1" in
-    build|update|regenerate|regen|rebuild|revbump|install|rebuild-cache|closure|download|run-in)
+    build|update|regenerate|regen|purge|rebuild|revbump|install|rebuild-cache|closure|download|run-in)
         ;;
     internal-*)
         if [[ ${in_container} == false ]]; then
@@ -2330,6 +2331,56 @@ jinx_cmd_regen() {
     done
 }
 
+# Removes what sources/ (or host-sources/) holds for the source of recipe $2
+# from $1 (recipes or host-recipes), which $3 names as the command line did.
+jinx_purge_source() {
+    eval "$(jinx_source_source_recipe "$2" "$1")"
+    eval "$(jinx_get_real_source_dir)"
+
+    local shown="$2"
+    if [[ $1 == host-recipes ]]; then
+        shown="host:$2"
+    fi
+
+    if [[ ${is_sourceless_package} == true ]]; then
+        jinx_msg "Nothing to purge for $3, which has no source"
+        return
+    fi
+
+    if [[ ${shown} == "$3" ]]; then
+        jinx_msg "Purging the source of ${shown}"
+    else
+        jinx_msg "Purging the source of ${shown}, which $3 builds from"
+    fi
+    if [[ ${is_local_package} == true ]]; then
+        jinx_msg2 "Leaving its own tree, ${source_dir#"${base_dir}/"}/, alone"
+    fi
+    jinx_clean_sources "$2"
+}
+
+jinx_cmd_purge() {
+    if [[ -z ${1-} ]]; then
+        die "purge requires at least one package name"
+    fi
+
+    # A source that several of the recipes share goes only once.
+    local -A purged=()
+    local pkgs pkg dir owner
+    pkgs="$(jinx_expand_recipes "$@")"
+    for pkg in ${pkgs}; do
+        dir=recipes
+        if [[ ${pkg} == host:* ]]; then
+            dir=host-recipes
+        fi
+        owner="$(eval "$(jinx_recipe_info "${dir}" "${pkg#host:}")" \
+            && echo "${_from_source_dir}/${from_source:-${pkg#host:}}")"
+        if [[ -z ${purged[${owner}]+x} ]]; then
+            purged[${owner}]=1
+            jinx_tracked_subshell 'jinx_purge_source "${owner%%/*}" "${owner#*/}" "${pkg}"'
+        fi
+    done
+}
+
 jinx_cmd_run_in() {
     if [[ -z ${1-} ]]; then
         die "run-in requires a recipe name"
@@ -3008,6 +3059,10 @@ case "$1" in
     regenerate|regen)
         shift 1
         jinx_cmd_regen "$@"
+        ;;
+    purge)
+        shift 1
+        jinx_cmd_purge "$@"
         ;;
     rebuild)
         shift 1
