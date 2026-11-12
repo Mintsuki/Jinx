@@ -370,7 +370,7 @@ When a library's ABI/soname changes and its dependents need recompiling, the con
 2. Bump `revision=` on every affected reverse-dependency recipe to mark them as needing a rebuild too. [`jinx revbump <library>`](<#revbump>) does this automatically for the whole transitive closure.
 3. Run `jinx update '*'`. The topological sort will rebuild the library first, then each dependent in the right order.
 
-If you only do step 1, dependents keep their existing XBPS files until you delete them manually, run `jinx rebuild <dep>` for each, or bump their `revision`.
+If you only do step 1, dependents keep their existing XBPS files until you run `jinx rebuild <dep>` for each, or bump their `revision`. Deleting a dependent's XBPS file is not enough on its own: `update` without `-b` takes a package that has no XBPS file of any version for one that was never built, and skips it; `update -b` and `build` do rebuild it.
 
 ## Jinxfile
 
