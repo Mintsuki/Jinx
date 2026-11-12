@@ -502,11 +502,7 @@ get_builddeps() {
 
     get_builddeps_file
 
-    local graph="${pkg}:${deps}"
-    if [[ -n ${builddeps} ]]; then
-        local graph="${graph} ${builddeps}"
-        local graph="${graph//: /:}"
-    fi
+    local graph="${pkg}:${deps} ${builddeps}"
 
     local dep
     for dep in "${!_deps_collected[@]}"; do
