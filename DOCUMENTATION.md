@@ -420,7 +420,7 @@ Several environment variables can be set when invoking `jinx` to alter its behav
 - `JINX_NATIVE_LANG`: When `JINX_NATIVE_MODE=yes` and the container is the sysroot, controls the value of `LANG` inside the container. Defaults to `C`.
 
 >[!note]
->`TERM` and `COLORTERM` are forwarded into the build container when they are set, so build tools keep their coloured output.
+>`TERM`, `COLORTERM`, and `NO_COLOR` are forwarded into the build container when they are set, so build tools keep (or drop) their coloured output. Jinx's own messages go to standard error, in colour when that is a terminal, unless `NO_COLOR` is set or `TERM` is `dumb`.
 
 ## Recipes
 
