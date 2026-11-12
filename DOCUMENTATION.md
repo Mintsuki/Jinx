@@ -177,16 +177,16 @@ usage: jinx <command> [args...]
    help|--help        Displays this message
    version|--version  Prints the version
    init               Initialises a build directory
-   update             Rebuild outdated package(s); use '-b' to also build never-built ones
-   build              Builds package(s), does incremental builds
-   rebuild            Rebuilds package(s)
+   update             Rebuilds outdated package(s); '-b' also builds never-built ones
+   build              Builds package(s) incrementally, after what they need that is missing
+   rebuild            Rebuilds package(s) from scratch, after what they need that is missing
    revbump            Bumps the revision of all (transitive) dependents of package(s)
-   regenerate|regen   Regenerates patch for package(s) and re-runs prepare step
+   regenerate|regen   Regenerates the working patch of package(s) and re-runs prepare()
    install            Installs package(s) (use '-f' to reinstall)
    closure            Prints the package(s) and all they need, in build order; '-m': only the missing ones
-   download           Downloads pre-built package(s) from remote repo
-   run-in             Runs a command in a container prepared with a recipe's hostdeps
-   rebuild-cache      Rebuilds Jinx cache
+   download           Downloads pre-built package(s), and what they need, from a repository
+   run-in             Runs a command in the container that a recipe builds in
+   rebuild-cache      Rebuilds the Jinx cache
 
 example: jinx update '*'
 ```
