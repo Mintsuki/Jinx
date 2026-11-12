@@ -387,10 +387,10 @@ A *bare minimum* `Jinxfile` is as follows:
 ```sh
 #! /bin/sh
 
-# Minimum Jinxfile for Jinx 0.11.x.
+# Minimum Jinxfile for Jinx 0.12.x.
 
 # *Required.* Ensures the project's expected major version matches the running jinx.
-JINX_MAJOR_VER=0.11
+JINX_MAJOR_VER=0.12
 
 # *Required.* Pins the Debian snapshot used for the container's base image.
 # See https://snapshot.debian.org/ for available snapshot identifiers.
