@@ -1512,8 +1512,12 @@ do_source() {
         fi
         tracked_subshell '
             if [[ ${is_local_package} != true && ${is_sourceless_package} != true ]]; then
+                # Patches cannot be applied twice, so a tree that they failed
+                # to apply to all the way has to be fetched again.
+                rm -f "${base_dir}"/${_sources_root}/'$1'.version
                 local allow_network=yes
                 run_in_container internal-patch '$1' '$2'
+                echo "${version}" >"${base_dir}"/${_sources_root}/'$1'.version
             fi
             touch "${base_dir}"/${_sources_root}/'$1'.patched
         '
