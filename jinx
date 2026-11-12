@@ -1573,18 +1573,16 @@ do_regen() {
     if [[ ${is_local_package} != true ]]; then
         cd "${base_dir}/${_sources_root}"
 
-        # exclude version control dirs
-        make_temp -d
-        local vc_dir_clean="${tmp}"
-        force_remove "${vc_dir_clean}"
-        make_temp -d
-        local vc_dir_workdir="${tmp}"
-        force_remove "${vc_dir_workdir}"
-
-        if [[ -n ${git_url} ]]; then
-            mv $1-clean/.git "${vc_dir_clean}"
-            mv $1-workdir/.git "${vc_dir_workdir}"
-        fi
+        # Version control data stays out of the patch. It is moved aside next
+        # to its tree, where an interrupted run leaves it for the next run to
+        # move back (unless the tree has been fetched again since).
+        local tree
+        for tree in "$1-clean" "$1-workdir"; do
+            if [[ -e ${tree}/.git ]]; then
+                force_remove "${tree}.jinx-git"
+                mv "${tree}/.git" "${tree}.jinx-git"
+            fi
+        done
 
         # The patch must not depend on anyone's Git configuration, including
         # that of a repository the sources are in, which GIT_DIR keeps out.
@@ -1592,10 +1590,11 @@ do_regen() {
             git diff --no-index --no-prefix --no-color --no-ext-diff \
             "$1-clean" "$1-workdir" >"${patch_file}" || true
 
-        if [[ -n ${git_url} ]]; then
-            mv "${vc_dir_clean}" $1-clean/.git
-            mv "${vc_dir_workdir}" $1-workdir/.git
-        fi
+        for tree in "$1-clean" "$1-workdir"; do
+            if [[ -e ${tree}.jinx-git ]]; then
+                mv "${tree}.jinx-git" "${tree}/.git"
+            fi
+        done
 
         local _regen_patches_dir="${base_dir}/${_from_source_dir}/$1/patches"
         if [[ -s "${patch_file}" ]]; then
