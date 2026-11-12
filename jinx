@@ -34,7 +34,6 @@ set -eu
 : "${JINX_CLEAN_WORKDIRS:=}"
 : "${TERM:=}"
 : "${COLORTERM:=}"
-: "${LD_LIBRARY_PATH:=}"
 
 IFS=$' \t\n'
 
@@ -264,10 +263,6 @@ if [[ ${in_container} == false ]]; then
     JINX_CACHE_DIR="$(cd "$JINX_CACHE_DIR" && pwd -P)"
 
     export PATH="${JINX_CACHE_DIR}/bin:${JINX_CACHE_DIR}/xbps/bin:${JINX_CACHE_DIR}/debootstrap/usr/sbin:${PATH}:/usr/sbin:/sbin"
-    if [[ -n ${LD_LIBRARY_PATH} ]]; then
-        LD_LIBRARY_PATH=":${LD_LIBRARY_PATH}"
-    fi
-    export LD_LIBRARY_PATH="${JINX_CACHE_DIR}/xbps/lib${LD_LIBRARY_PATH}"
 
     mkdir -p "${base_dir}/sources" "${base_dir}/host-sources" "${build_dir}/host-builds" "${build_dir}/host-pkgs" "${build_dir}/builds" "${build_dir}/pkgs"
 
@@ -2651,8 +2646,7 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
     fi
 
     # The tarball wraps everything in a top-level ${xbps_dirname}/ dir; extract
-    # then rename so ${JINX_CACHE_DIR}/xbps/{bin,lib,...} are where PATH and
-    # LD_LIBRARY_PATH already expect them.
+    # then rename so ${JINX_CACHE_DIR}/xbps/bin is where PATH expects it.
     ( cd "${JINX_CACHE_DIR}" && gunzip < "${xbps_tarball}" | tar -xf - )
     force_remove "${JINX_CACHE_DIR}/xbps"
     mv "${JINX_CACHE_DIR}/${xbps_dirname}" "${JINX_CACHE_DIR}/xbps"
