@@ -140,7 +140,7 @@ cmd_help() {
     printf "\n   revbump            Bumps the revision of all (transitive) dependents of package(s)"
     printf "\n   regenerate|regen   Regenerates patch for package(s) and re-runs prepare step"
     printf "\n   install            Installs package(s) (use '-f' to reinstall)"
-    printf "\n   dry-run            Prints all packages that need to be built in order (space separated)"
+    printf "\n   closure            Prints the package(s) and all they need, in build order; '-m': only the missing ones"
     printf "\n   download           Downloads pre-built package(s) from remote repo"
     printf "\n   run-in             Runs a command in a container prepared with a recipe's hostdeps"
     printf "\n   rebuild-cache      Rebuilds Jinx cache"
@@ -252,7 +252,7 @@ fi
 
 # Checked before anything below can take the lock or rebuild the cache.
 case "$1" in
-    build|update|regenerate|regen|rebuild|revbump|install|rebuild-cache|dry-run|download|run-in)
+    build|update|regenerate|regen|rebuild|revbump|install|rebuild-cache|closure|download|run-in)
         ;;
     internal-*)
         if [[ ${in_container} == false ]]; then
@@ -1987,13 +1987,18 @@ cmd_update() {
     done
 }
 
-cmd_dry_run() {
-    # Print all packages that would be built (space separated), but only those
-    # that are not already built in the build cache. Host packages are printed
-    # with a 'host:' prefix, in one topological order with the normal ones: a
-    # target recipe's hostdeps are host packages and a host recipe's deps are
-    # target packages, so the two kinds interleave.
+cmd_closure() {
+    # Print everything the given packages need to be built, themselves
+    # included, in build order and space separated; with -m, only what has no
+    # .xbps yet. Host packages carry a 'host:' prefix and share the one order
+    # with normal ones: a target recipe's hostdeps are host packages and a host
+    # recipe's deps are target packages, so the two kinds interleave.
     # Nodes are 'host/<name>' internally because topo_sort splits its graph on ':'.
+    local missing_only=no
+    if [[ ${1-} == -m ]]; then
+        missing_only=yes
+        shift 1
+    fi
     if [[ -z ${1-} ]]; then
         set -- '*'
     fi
@@ -2012,7 +2017,7 @@ cmd_dry_run() {
     local -A node_deps
     local -A collected
 
-    dry_run_collect() {
+    closure_collect() {
         local node="$1"
         [[ -n ${collected[$node]+x} ]] && return
         collected[$node]=1
@@ -2045,13 +2050,13 @@ cmd_dry_run() {
         node_deps[$node]="${edges}"
 
         for d in ${edges}; do
-            dry_run_collect "${d}"
+            closure_collect "${d}"
         done
     }
 
     local r
     for r in ${roots[@]+"${roots[@]}"}; do
-        dry_run_collect "${r}"
+        closure_collect "${r}"
     done
 
     local graph= node
@@ -2060,24 +2065,29 @@ cmd_dry_run() {
 "
     done
 
-    local pending=""
+    local -a out=()
     for node in $(topo_sort "${graph}"); do
         if [[ ${node} == host/* ]]; then
-            if [[ ! -f "${build_dir}/host-pkgs/$(host_pkg_filename "${node#host/}")" ]]; then
-                local pending="${pending} host:${node#host/}"
+            if [[ ${missing_only} == yes \
+                  && -f "${build_dir}/host-pkgs/$(host_pkg_filename "${node#host/}")" ]]; then
+                continue
             fi
+            out+=("host:${node#host/}")
         else
-            eval "$(include_recipe "${base_dir}"/recipes/"${node}")"
-            if [[ -n ${from_source} ]]; then
-                local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+            if [[ ${missing_only} == yes ]]; then
+                eval "$(include_recipe "${base_dir}"/recipes/"${node}")"
+                if [[ -n ${from_source} ]]; then
+                    local version=$(eval "$(source_source_recipe "${from_source}" "${_from_source_dir}")" && echo "$version")
+                fi
+                if [[ -f "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" ]]; then
+                    continue
+                fi
             fi
-            if [[ ! -f "${build_dir}/pkgs/${name}-${version}_${revision}.${JINX_ARCH}.xbps" ]]; then
-                local pending="${pending} ${node}"
-            fi
+            out+=("${node}")
         fi
     done
 
-    printf '%s\n' ${pending} | awk '!seen[$0]++{printf "%s ", $0} END{print ""}'
+    echo "${out[*]-}"
 }
 
 cmd_download_for() {
@@ -3028,9 +3038,9 @@ case "$1" in
     rebuild-cache)
         redo_first_use
         ;;
-    dry-run)
+    closure)
         shift 1
-        cmd_dry_run "$@"
+        cmd_closure "$@"
         ;;
     download)
         shift 1

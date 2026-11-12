@@ -17,7 +17,7 @@ Links to different points in this documentation:
 	- [`revbump`](<#revbump>)
 	- [`regenerate`](<#regenerate>)
 	- [`install`](<#install>)
-	- [`dry-run`](<#dry-run>)
+	- [`closure`](<#closure>)
 	- [`download`](<#download>)
 	- [`run-in`](<#run-in>)
 	- [`rebuild-cache`](<#rebuild-cache>)
@@ -181,7 +181,7 @@ usage: jinx <command> [args...]
    revbump            Bumps the revision of all (transitive) dependents of package(s)
    regenerate|regen   Regenerates patch for package(s) and re-runs prepare step
    install            Installs package(s) (use '-f' to reinstall)
-   dry-run            Prints all packages that need to be built in order (space separated)
+   closure            Prints the package(s) and all they need, in build order; '-m': only the missing ones
    download           Downloads pre-built package(s) from remote repo
    run-in             Runs a command in a container prepared with a recipe's hostdeps
    rebuild-cache      Rebuilds Jinx cache
@@ -193,7 +193,7 @@ example: jinx update '*'
 >For all commands that take recipe names, an argument of `'*'` (or any shell glob) can be used in place of an explicit name; Jinx expands it against the relevant recipes directory, passing over any entry there that is not a recipe. This is great for "full" distributions. Each recipe is handled once however many arguments match it, and an argument that matches no recipe at all is an error.
 
 >[!tip]
->For commands that operate on recipes ([`build`](<#build>), [`rebuild`](<#rebuild>), [`revbump`](<#revbump>), [`regenerate`](<#regenerate>), [`update`](<#update>), [`dry-run`](<#dry-run>), [`download`](<#download>), [`run-in`](<#run-in>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`. The `install` command, by contrast, only operates on normal recipes.
+>For commands that operate on recipes ([`build`](<#build>), [`rebuild`](<#rebuild>), [`revbump`](<#revbump>), [`regenerate`](<#regenerate>), [`update`](<#update>), [`closure`](<#closure>), [`download`](<#download>), [`run-in`](<#run-in>)), prefix a name with `host:` to refer to a host recipe instead of a normal one. For example, `jinx build host:gcc` builds `host-recipes/gcc/`, while `jinx build gcc` builds `recipes/gcc/`. Glob expansion respects the prefix: `jinx build 'host:*'` expands against `host-recipes/`. The `install` command, by contrast, only operates on normal recipes.
 
 >[!note]
 >Every command except `help`, `version` and `init` holds an exclusive lock on `<cache-dir>/jinx.lock` for the whole run, and refuses to start while another Jinx holds it. Jinx shares `sources/`, `builds/` and `pkgs/` between runs and is not concurrency-safe - a second run would delete the first one's build tree. Since the cache directory defaults to `<source-dir>/.jinx-cache`, this also serialises build directories that share a source directory, which is exactly what their shared `sources/` requires.
@@ -290,15 +290,21 @@ The `-f` flag **forces** the installation, removing any pre-existing version of 
 >[!warning]
 >The `install` command requires a "sysroot" directory as the first positional argument before the package list. Example: `jinx install sysroot/ base`.
 
-#### `dry-run`
+#### `closure`
 
-Prints, on a single line space-separated, the topological order of packages that would be built to satisfy the given target(s) (or `'*'` - every normal recipe - if no target is given). Already-built packages are omitted.
+```sh
+jinx closure [-m] [package(s)...]
+```
+
+Prints, on a single line space-separated, the closure of the given target(s) (or `'*'` - every normal recipe - if no target is given): the targets and everything they need in order to be built, transitively, in the topological order they can be built in. With `-m`, only the packages whose XBPS file is missing are printed, built or never built alike, and an empty line when there are none.
+
+`closure -m` is therefore not quite a preview of [`update`](<#update>): it walks the whole closure regardless of what is already built, and it includes packages that have never been built, which `update` only builds with `-b`.
 
 Normal and host packages share a **single** topological order and interleave wherever the dependencies demand it; host ones are printed with a `host:` prefix, and `host:` targets are accepted as roots. The graph spans both namespaces exactly like the builds do: `hostdeps`, `hostrundeps` and `source_hostdeps` are edges into `host-recipes/`, while `deps`, `builddeps` and `source_deps` are edges into `recipes/`, and either kind of recipe may have either kind of edge. A recipe that borrows its source through [`from_source`](<#from_source>)/[`from_host_source`](<#from_host_source>) inherits the source recipe's `source_deps`/`source_hostdeps`, since those are what its own source preparation will pull in. [`binpkgdeps`](<#binpkgdeps>) are deliberately *not* edges here - not creating a build-order edge is the entire point of that property.
 
-`dry-run` builds nothing, but like every other recipe command it takes the build lock: it may have to refresh the shared cache first, which must not happen under a running build.
+`closure` builds nothing, but like every other recipe command it takes the build lock: it may have to refresh the shared cache first, which must not happen under a running build.
 
-This is useful for scripting (for example, building one package at a time in CI to keep memory low) and for quickly inspecting what an `update` will do without actually building anything.
+This is useful for scripting, for example to build one package at a time in CI to keep memory low: `for p in $(jinx closure -m '*'); do jinx build "$p"; done`.
 
 #### `download`
 
@@ -350,7 +356,7 @@ All build-driving commands walk **downward** through the dependency tree, rebuil
 
 - [`build <pkg>`](<#build>) / [`rebuild <pkg>`](<#rebuild>) iterate each direct dep and host-dep of `<pkg>`, recursing so that any missing artifact in the closure is rebuilt before `<pkg>` itself.
 - [`update <pkg>`](<#update>) performs the same walk, gated on `<pkg>` itself being missing; the walk uses one topological sort over `<pkg>`'s entire transitive closure.
-- [`dry-run`](<#dry-run>) performs the same walk in preview mode and prints what *would* be rebuilt, in build order.
+- [`closure -m`](<#closure>) walks the whole closure instead, already-built parts included, and prints everything missing in it, in build order.
 
 Topological sorting is required for correctness: before any recipe builds, every transitive dep of it must already have its XBPS file in `pkgs/` (or, for host deps, `host-pkgs/`), because `prepare_container` uses `xbps-install` to populate the build sysroot from `pkgs/` and the container's `/usr/local` from `host-pkgs/`. Sorting deps-first ensures that is always the case.
 
@@ -793,7 +799,7 @@ builddeps="autoconf gettext-host"
 - Space-separated list of recipes.
 - Normal recipes only.
 
-Specifies normal-recipe **runtime** dependencies that are recorded in the produced XBPS metadata exactly like [`deps`](<#deps>), but that create **no build-order edge**: Jinx will not build them before this recipe, and [`dry-run`](<#dry-run>) does not order them. This exists for the single case `deps` cannot express - a runtime dependency whose build-order edge would close a cycle, i.e. `a` needs `b` at run time while `b` needs `a` to build.
+Specifies normal-recipe **runtime** dependencies that are recorded in the produced XBPS metadata exactly like [`deps`](<#deps>), but that create **no build-order edge**: Jinx will not build them before this recipe, and [`closure`](<#closure>) does not order them. This exists for the single case `deps` cannot express - a runtime dependency whose build-order edge would close a cycle, i.e. `a` needs `b` at run time while `b` needs `a` to build.
 
 The entries are real XBPS run-dependencies, so they still end up in a sysroot whenever this package is installed into one. That is why, when building a recipe, Jinx first builds any missing `binpkgdeps` of the packages in its dependency closure: `xbps-install` has to be able to resolve them while populating the build sysroot.
 
@@ -1163,7 +1169,7 @@ Host recipes can declare their own sources inline (`tarball_url`, `zip_url`, `gi
 
 A host recipe may also list [`deps`](<#deps>)/[`builddeps`](<#builddeps>). Those name normal recipes, are built for the target, and are installed into the `/sysroot` its container sees - this is how a cross-toolchain gets the target headers and libraries it is built against. They are *not* recorded as dependencies of the resulting host package; only [`hostrundeps`](<#hostrundeps>) are, with [`imagerundeps`](<#imagerundeps>) doing the equivalent for the Debian packages a consumer's container image needs in order to run this one. [`binpkgdeps`](<#binpkgdeps>) is a normal-recipe property and has no effect in `host-recipes/`, while [`conf_files`](<#conf_files>) behaves identically for both.
 
-Host recipes are built into XBPS packages just like normal recipes, kept in `host-pkgs/` with its own XBPS repository index. The package filename is `<name>-<version>_<revision>.<host-arch>.xbps`, where `<host-arch>` is the build machine's architecture (`uname -m`) - host tools are native to the build machine, so this is independent of `JINX_ARCH` (the target arch). When a recipe needs host dependencies, Jinx `xbps-install`s them on the fly into the build container's `/usr/local` during container preparation, exactly the way normal `deps` are installed into the sysroot; `hostrundeps` are recorded as the host package's XBPS run-dependencies. Host recipes get a `.host-revision` marker that is the exact counterpart of a normal recipe's `.revision` (it records the `revision` the source tree was last prepared for and forces a source re-clean when the recipe's `revision` changes - the `version` axis is handled separately by `.version` - gated off for `from_source`/`from_host_source` consumers in the same way). Consequently a `version`/`revision` bump on a host recipe triggers a rebuild, and [`update`](<#update>)/[`dry-run`](<#dry-run>)/[`build`](<#build>)/[`rebuild`](<#rebuild>) treat host recipes by their XBPS file identically to normal recipes.
+Host recipes are built into XBPS packages just like normal recipes, kept in `host-pkgs/` with its own XBPS repository index. The package filename is `<name>-<version>_<revision>.<host-arch>.xbps`, where `<host-arch>` is the build machine's architecture (`uname -m`) - host tools are native to the build machine, so this is independent of `JINX_ARCH` (the target arch). When a recipe needs host dependencies, Jinx `xbps-install`s them on the fly into the build container's `/usr/local` during container preparation, exactly the way normal `deps` are installed into the sysroot; `hostrundeps` are recorded as the host package's XBPS run-dependencies. Host recipes get a `.host-revision` marker that is the exact counterpart of a normal recipe's `.revision` (it records the `revision` the source tree was last prepared for and forces a source re-clean when the recipe's `revision` changes - the `version` axis is handled separately by `.version` - gated off for `from_source`/`from_host_source` consumers in the same way). Consequently a `version`/`revision` bump on a host recipe triggers a rebuild, and [`update`](<#update>)/[`closure`](<#closure>)/[`build`](<#build>)/[`rebuild`](<#rebuild>) treat host recipes by their XBPS file identically to normal recipes.
 
 >[!warning]
 >Linking against dynamic shared libraries *may* have unexpected behaviour when the resulting binary is run from the host: it could try to load a library that is not installed on the host. Static linking, or relying solely on libraries provided by `imagedeps`, is the safer route.
