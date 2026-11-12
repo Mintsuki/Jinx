@@ -1019,48 +1019,30 @@ do_tarball_fetch() {
         fi
     }
 
-    if [[ -n ${tarball_sha256} ]]; then
-        local actual_sha256="$(sha256sum "${tarball_path}")"
-        local actual_sha256="${actual_sha256%% *}"
-        if [[ ${actual_sha256} != "${tarball_sha256}" ]]; then
-            if [[ ${tarball_sha256} == "?" ]]; then
-                fill_recipe_checksum "${_checksum_prefix}_sha256" "${actual_sha256}"
+    local algo var expected actual
+    for algo in sha256 sha512 blake2b; do
+        var="tarball_${algo}"
+        expected="${!var}"
+        if [[ -z ${expected} ]]; then
+            continue
+        fi
+        if [[ ${algo} == blake2b ]]; then
+            actual="$(b2sum "${tarball_path}")"
+        else
+            actual="$("${algo}sum" "${tarball_path}")"
+        fi
+        actual="${actual%% *}"
+        if [[ ${actual} != "${expected}" ]]; then
+            if [[ ${expected} == "?" ]]; then
+                fill_recipe_checksum "${_checksum_prefix}_${algo}" "${actual}"
             else
-                die "failed to verify the SHA256 of ${name}'s source:
-  expected '${tarball_sha256}'
-  got      '${actual_sha256}'"
+                die "failed to verify the ${algo^^} of ${name}'s source:
+  expected '${expected}'
+  got      '${actual}'"
             fi
         fi
-        local checksum_verified=yes
-    fi
-    if [[ -n ${tarball_sha512} ]]; then
-        local actual_sha512="$(sha512sum "${tarball_path}")"
-        local actual_sha512="${actual_sha512%% *}"
-        if [[ ${actual_sha512} != "${tarball_sha512}" ]]; then
-            if [[ ${tarball_sha512} == "?" ]]; then
-                fill_recipe_checksum "${_checksum_prefix}_sha512" "${actual_sha512}"
-            else
-                die "failed to verify the SHA512 of ${name}'s source:
-  expected '${tarball_sha512}'
-  got      '${actual_sha512}'"
-            fi
-        fi
-        local checksum_verified=yes
-    fi
-    if [[ -n ${tarball_blake2b} ]]; then
-        local actual_blake2b="$(b2sum "${tarball_path}")"
-        local actual_blake2b="${actual_blake2b%% *}"
-        if [[ ${actual_blake2b} != "${tarball_blake2b}" ]]; then
-            if [[ ${tarball_blake2b} == "?" ]]; then
-                fill_recipe_checksum "${_checksum_prefix}_blake2b" "${actual_blake2b}"
-            else
-                die "failed to verify the BLAKE2B of ${name}'s source:
-  expected '${tarball_blake2b}'
-  got      '${actual_blake2b}'"
-            fi
-        fi
-        local checksum_verified=yes
-    fi
+        checksum_verified=yes
+    done
 
     if [[ ${checksum_verified} == no ]]; then
         die "recipe '${name}' sets no checksum for its archive"
