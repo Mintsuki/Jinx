@@ -696,6 +696,17 @@ get_deps_file() {
     done
 }
 
+# The commands that mount the file systems that every container needs onto
+# root $1.
+container_mounts_cmd() {
+    printf "mount --rbind --make-rslave /dev '%s/dev'\n" "$1"
+    printf "mount -t proc proc '%s/proc'\n" "$1"
+    printf "mount --rbind --make-rslave /sys '%s/sys'\n" "$1"
+    printf "mount -t tmpfs run '%s/run'\n" "$1"
+    printf "mount -t tmpfs tmpfs '%s/tmp'\n" "$1"
+    printf "mount -t tmpfs tmpfs '%s/var/tmp'\n" "$1"
+}
+
 run_in_container1() {
     local run_in_cont1_root="$1"
     shift 1
@@ -706,12 +717,7 @@ run_in_container1() {
     unshare --user --map-root-user --mount --pid --fork -- "$BASH" -c "
         set -e
 
-        mount --rbind --make-rslave /dev '${run_in_cont1_root}/dev'
-        mount -t proc proc '${run_in_cont1_root}/proc'
-        mount --rbind --make-rslave /sys '${run_in_cont1_root}/sys'
-        mount -t tmpfs run '${run_in_cont1_root}/run'
-        mount -t tmpfs tmpfs '${run_in_cont1_root}/tmp'
-        mount -t tmpfs tmpfs '${run_in_cont1_root}/var/tmp'
+        $(container_mounts_cmd "${run_in_cont1_root}")
 
         mount --bind '${apt_cache}' '${run_in_cont1_root}/var/cache/apt/archives'
 
@@ -923,12 +929,7 @@ run_in_container() {
 
         $(bind_mount_cmd "${imgroot}" "${imgroot}" ro)
 
-        mount --rbind --make-rslave /dev '${imgroot}/dev'
-        mount -t proc proc '${imgroot}/proc'
-        mount --rbind --make-rslave /sys '${imgroot}/sys'
-        mount -t tmpfs run '${imgroot}/run'
-        mount -t tmpfs tmpfs '${imgroot}/tmp'
-        mount -t tmpfs tmpfs '${imgroot}/var/tmp'
+        $(container_mounts_cmd "${imgroot}")
 
         $(bind_mount_cmd "${script}" "${imgroot}/jinx" ro)
         $(bind_mount_cmd "${base_dir}" "${imgroot}/base_dir" "${container_base_dir_ro}")
