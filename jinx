@@ -1077,10 +1077,25 @@ do_tarball_fetch() {
         ( cd "${extract_dir}" && tar -xf "${tarball_path}" )
     fi
 
-    mv "${extract_dir}"/* "${base_dir}"/${_sources_root}/${name} >/dev/null 2>&1 || (
-        mkdir -p "${base_dir}"/${_sources_root}/${name}
-        mv "${extract_dir}"/* "${base_dir}"/${_sources_root}/${name}/
-    )
+    local -a top=()
+    local entry
+    for entry in "${extract_dir}"/* "${extract_dir}"/.[!.]*; do
+        if [[ -e ${entry} || -L ${entry} ]]; then
+            top+=("${entry}")
+        fi
+    done
+
+    # The tree is either the one directory at the top of the archive, or all
+    # of the archive.
+    local dest="${base_dir}/${_sources_root}/${name}"
+    if (( ${#top[@]} == 1 )) && [[ -d ${top[0]} && ! -L ${top[0]} ]]; then
+        mv "${top[0]}" "${dest}"
+    else
+        mkdir "${dest}"
+        if (( ${#top[@]} > 0 )); then
+            mv "${top[@]}" "${dest}/"
+        fi
+    fi
 
     force_remove "${extract_dir}"
 }
