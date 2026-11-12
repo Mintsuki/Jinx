@@ -1489,7 +1489,8 @@ do_source() {
                 # Patches cannot be applied twice, so a tree that they failed
                 # to apply to all the way has to be fetched again.
                 rm -f "${base_dir}"/${_sources_root}/'$1'.version
-                local allow_network=yes
+                local allow_network=no
+                local container_base_dir_ro=yes
                 run_in_container internal-patch '$1' '$2'
                 echo "${version}" >"${base_dir}"/${_sources_root}/'$1'.version
             fi
