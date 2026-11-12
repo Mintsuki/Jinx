@@ -2439,10 +2439,17 @@ cmd_revbump() {
 
             local depinfo
             depinfo="$(eval "$(include_recipe "${base_dir}/${nsdir}/${pkg}")" \
-                && printf '%s\n%s\n' "${deps} ${builddeps}" "${hostdeps} ${hostrundeps}")"
-            local rdeps_line="${depinfo%%$'\n'*}"
-            local rhost_line="${depinfo#*$'\n'}"
-            local rhost_line="${rhost_line%%$'\n'*}"
+                && printf '%s\n%s\n%s\n' "${deps} ${builddeps}" "${hostdeps} ${hostrundeps}" \
+                    "${from_source:+${_from_source_dir}/${from_source}}")"
+            local -a depinfo_lines
+            mapfile -t depinfo_lines <<<"${depinfo}"
+            local rdeps_line="${depinfo_lines[0]-}"
+            local rhost_line="${depinfo_lines[1]-}"
+
+            # A recipe built from another one's source changes along with it.
+            if [[ -n ${depinfo_lines[2]-} ]]; then
+                revdeps["${depinfo_lines[2]}"]+=" ${node}"
+            fi
 
             # Preparing the source is part of building the package, so what the
             # source step needs is a revbump edge just like what the build does.
