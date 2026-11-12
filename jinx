@@ -472,6 +472,10 @@ elif [[ -n ${from_source} ]]; then
 fi
 local _sources_root=${_from_source_dir/recipes/sources}
 
+if [[ -n ${from_source} && ( -n ${tarball_url} || -n ${git_url} || -n ${source_dir} ) ]]; then
+    die "recipe '${name}' uses from_source/from_host_source and cannot also have its own source"
+fi
+
 if [[ -n ${from_source} && -d ${recipe_dir}/patches ]]; then
     die "recipe '${name}' uses from_source/from_host_source and cannot have its own patches/ directory (patches live with the source recipe)"
 fi

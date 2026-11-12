@@ -535,7 +535,7 @@ commit="28257019ce04f784337cb9c3125abb4d02cef14d"     # initial checkout point
 #### `from_source`
 
 - **Optional**.
-- Mutually exclusive with [`from_host_source`](<#from_host_source>).
+- Mutually exclusive with [`from_host_source`](<#from_host_source>), and with a source of the recipe's own ([`tarball_url`](<#tarball_url>), [`zip_url`](<#zip_url>), [`git_url`](<#git_url>), or [`source_dir`](<#source_dir>)).
 
 Specifies another recipe in `recipes/` to draw build sources from. The referenced recipe provides the tarball/git URL, checksums, `version`, any [`early_prepare()`](<#early_prepare>)/[`prepare()`](<#prepare>) callbacks, and the `source_*` properties that govern the source-preparation environment. Patches likewise belong to the source recipe and are applied automatically - a consumer recipe that sets `from_source` is not permitted to have its own `patches/` directory.
 
@@ -559,7 +559,7 @@ from_source="test-shared-sources" # Refers to recipes/test-shared-sources.
 #### `from_host_source`
 
 - **Optional**.
-- Mutually exclusive with [`from_source`](<#from_source>).
+- Mutually exclusive with [`from_source`](<#from_source>), and with a source of the recipe's own.
 
 Like [`from_source`](<#from_source>) but resolves against `host-recipes/` instead of `recipes/`. Use this when several host recipes share a common source tree - point each of them at a single `host-recipes/<name>` that declares the tarball/git URL and `early_prepare()`/`prepare()` callbacks. As with `from_source`, the consumer recipe cannot carry its own `patches/` directory; patches live with the source.
 
