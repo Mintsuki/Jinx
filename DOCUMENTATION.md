@@ -803,6 +803,8 @@ Specifies normal-recipe **runtime** dependencies that are recorded in the produc
 
 The entries are real XBPS run-dependencies, so they still end up in a sysroot whenever this package is installed into one. That is why, when building a recipe, Jinx first builds any missing `binpkgdeps` of the packages in its dependency closure: `xbps-install` has to be able to resolve them while populating the build sysroot.
 
+It also means that `b` cannot build against `a` itself: installing `a` into `b`'s build sysroot would need `b`, which does not exist yet, and `xbps-install` gives up. `b` has to build against a separate `a-bootstrap` recipe instead, one that uses [`from_source`](<#from_source>) to share `a`'s source but is configured without `b`, so that nothing it installs needs `b`, and that sets [`bootstrap_pkg=yes`](<#bootstrap_pkg>), so that `b` does not depend on it at run time.
+
 Listing the same recipe in both `binpkgdeps` and `deps`/`builddeps` is an error, and each entry must name a recipe in `recipes/`. Entries whose recipe sets [`bootstrap_pkg=yes`](<#bootstrap_pkg>) are dropped from the metadata, just as with `deps`. [`revbump`](<#revbump>) does not follow `binpkgdeps` edges either; [`download`](<#download>) does.
 
 Example:
@@ -812,7 +814,27 @@ Example:
 # recipes/a/recipe
 
 # ...
-binpkgdeps="b" # 'a' needs 'b' at run time, but 'b' needs 'a' to build.
+deps="..."     # but not 'b': 'b' needs 'a' to build
+binpkgdeps="b" # 'a' needs 'b' at run time
+# ...
+```
+
+```sh
+#! /bin/sh
+# recipes/a-bootstrap/recipe
+
+from_source=a
+revision=1
+bootstrap_pkg=yes
+# ... built like 'a', but without 'b'
+```
+
+```sh
+#! /bin/sh
+# recipes/b/recipe
+
+# ...
+deps="a-bootstrap" # not 'a', whose package needs 'b' at run time
 # ...
 ```
 
