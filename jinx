@@ -696,6 +696,18 @@ get_deps_file() {
     done
 }
 
+# Runs the command $2... with its output held back, which only gets shown, after
+# the error message $1, if the command fails.
+run_quietly() {
+    make_temp
+    local log="${tmp}"
+    if ! "${@:2}" >"${log}" 2>&1; then
+        error "$1"
+        sed 's/^/    /' "${log}" >&2
+        return 1
+    fi
+}
+
 # The commands that mount the file systems that every container needs onto
 # root $1.
 container_mounts_cmd() {
@@ -765,14 +777,13 @@ prepare_container() {
     make_temp -d
     sysroot="${tmp}"
 
-    make_temp
-    local xbps_log="${tmp}"
     local dep
     for dep in "${!_deps_collected[@]}"; do
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${JINX_ARCH}" \
-            xbps-install -y -r "${sysroot}" -R "${build_dir}"/pkgs "${dep}" >"${xbps_log}" 2>&1 \
-            || { error "failed to install '${dep}' into the sysroot:"; sed 's/^/    /' "${xbps_log}" >&2; exit 17; }
+            run_quietly "failed to install '${dep}' into the sysroot:" \
+                xbps-install -y -r "${sysroot}" -R "${build_dir}"/pkgs "${dep}" \
+            || exit 17
     done
 
     if [[ $JINX_NATIVE_MODE == yes && -z $cross_compile ]]; then
@@ -787,8 +798,9 @@ prepare_container() {
         for hostdep in "${!_hostdeps_collected[@]}"; do
             XBPS_ARCH=invalid \
             XBPS_TARGET_ARCH="${host_arch}" \
-                xbps-install -y -r "${host_root}" -R "${build_dir}"/host-pkgs "${hostdep}" >"${xbps_log}" 2>&1 \
-                || { error "failed to install host package '${hostdep}':"; sed 's/^/    /' "${xbps_log}" >&2; exit 17; }
+                run_quietly "failed to install host package '${hostdep}':" \
+                    xbps-install -y -r "${host_root}" -R "${build_dir}"/host-pkgs "${hostdep}" \
+                || exit 17
         done
         container_pkgs="${host_root}/usr/local"
         mkdir -p "${container_pkgs}"
@@ -2420,12 +2432,11 @@ cmd_install() {
                 xbps-remove -Ffy -r "${sysroot}" ${pkg} >/dev/null 2>&1 || true
         fi
 
-        make_temp
-        local install_log="${tmp}"
         XBPS_ARCH=invalid \
         XBPS_TARGET_ARCH="${JINX_ARCH}" \
-            xbps-install -y $force_install -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} >"${install_log}" 2>&1 \
-            || { error "failed to install ${pkg}:"; sed "s/^/    /" "${install_log}" >&2; exit 1; }
+            run_quietly "failed to install ${pkg}:" \
+                xbps-install -y $force_install -r "${sysroot}" -R "${build_dir}"/pkgs ${pkg} \
+            || exit 1
 
         pkg_file_list "${pkg_path}" >>"${all_files}"
         '
