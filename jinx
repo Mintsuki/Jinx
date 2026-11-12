@@ -2899,8 +2899,9 @@ if [[ -n ${JINX_CMAKE_PLATFORM-} && ! -f ${base_dir}/${JINX_CMAKE_PLATFORM} ]]; 
 fi
 
 # Inside the build container, the cache is the one this very build runs from,
-# and a Jinxfile that evaluates differently there must not rebuild it.
-if [[ ${in_container} == false ]]; then
+# and a Jinxfile that evaluates differently there must not rebuild it. Nor is
+# there any point in rebuilding it just before 'rebuild-cache' does so again.
+if [[ ${in_container} == false && $1 != rebuild-cache ]]; then
     if  [[ ! -f "${JINX_CACHE_DIR}/version" || $(cat "${JINX_CACHE_DIR}/version") != "${jinx_version}" ]] \
      || [[ ! -f "${JINX_CACHE_DIR}/debian_snapshot" || $(cat "${JINX_CACHE_DIR}/debian_snapshot") != "${JINX_DEBIAN_SNAPSHOT}" ]] \
      || [[ ! -f "${JINX_CACHE_DIR}/base_packages" || $(cat "${JINX_CACHE_DIR}/base_packages") != "${JINX_BASE_PACKAGES-}" ]] \
