@@ -23,7 +23,7 @@ An example OS using Jinx is [Gloire](https://codeberg.org/Ironclad/Gloire).
 - wget
 - xz (for `xzcat`, needed by `debootstrap`)
 - zstd
-- coreutils or equivalent (for `sha256sum`/`sha256` and `chroot`)
+- coreutils or equivalent (for `sha256sum` and `chroot`)
 - procps or equivalent (for `free`)
 - util-linux or equivalent (for `unshare`, `flock` and `mount`)
 

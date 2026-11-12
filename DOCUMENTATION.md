@@ -80,7 +80,7 @@ Ensure the following prerequisites have been acquired:
 - `wget`.
 - `xzcat` from an `xz` package, or equivalent.
 - `zstd`.
-- `sha256sum` (or `sha256`) and `chroot` from a `coreutils` package, or equivalent.
+- `sha256sum` and `chroot` from a `coreutils` package, or equivalent.
 - `free` from a `procps` package, or equivalent.
 - `unshare`, `flock` and `mount` from a `util-linux` package, or equivalent.
 
