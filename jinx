@@ -1375,8 +1375,9 @@ source_is_pinned() {
     local _root="$2"
 
     local _rec _id
-    for _rec in $(grep -rl 'clean_workdirs' --include=recipe \
-                       "${base_dir}"/recipes "${base_dir}"/host-recipes || true); do
+    for _rec in "${base_dir}"/recipes/*/recipe "${base_dir}"/host-recipes/*/recipe; do
+        [[ -f ${_rec} ]] && grep -q 'clean_workdirs' "${_rec}" || continue
+
         _id=$(
             eval "$(include_recipe "${_rec%/recipe}")"
             [[ ${clean_workdirs} == no ]] || exit 0
