@@ -942,6 +942,11 @@ do_tarball_fetch() {
                 fi
                 printf '%s\n' "${line}"
             done <"${current_recipe_file}" >"${_out}"
+            # Left as it is, the '?' would let every later fetch through
+            # unverified.
+            if [[ ${_done} == no ]]; then
+                die "cannot autofill ${var_name} for ${name}: no ${var_name}=? line in ${current_recipe_file}"
+            fi
             mv "${_out}" "${current_recipe_file}"
         else
             die "cannot autofill ${var_name} for ${name}: recipe file unknown"
