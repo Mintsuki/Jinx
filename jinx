@@ -248,6 +248,15 @@ if [[ $script == //jinx ]]; then
     in_container=true
 fi
 
+# Checked before anything below can take the lock or rebuild the cache.
+case "$1" in
+    build|update|regenerate|regen|rebuild|revbump|install|rebuild-cache|dry-run|download|run-in|internal-*)
+        ;;
+    *)
+        die "unknown command '$1'; see '$0 help'"
+        ;;
+esac
+
 case "$1" in
     install)
         ;;
