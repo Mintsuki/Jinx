@@ -1711,17 +1711,20 @@ do_pkg() {
         if [[ ${clean_workdirs} != no ]]; then
             force_remove "${_builds}" "${_builds}.configured"
 
-            # Only the recipe that owns a source may reap it; a from_source
-            # recipe borrows a tree the owner and other borrowers still need.
-            if [[ -z ${from_source} ]]; then
-                eval "$(source_source_recipe "${name}" "${_recipes_dir}")"
+            # A shared tree goes too, whichever of its users built last; the
+            # next one to need it fetches it again.
+            local _src_name="${name}" _src_recipes_dir="${_recipes_dir}"
+            if [[ -n ${from_source} ]]; then
+                _src_name="${from_source}"
+                _src_recipes_dir="${_from_source_dir}"
+            fi
+            eval "$(source_source_recipe "${_src_name}" "${_src_recipes_dir}")"
 
-                eval "$(get_real_source_dir)"
+            eval "$(get_real_source_dir)"
 
-                if [[ ${is_sourceless_package} != true && ${is_local_package} != true ]] \
-                   && ! source_is_pinned "${name}" "${_sources_root}"; then
-                    clean_sources "${name}"
-                fi
+            if [[ ${is_sourceless_package} != true && ${is_local_package} != true ]] \
+               && ! source_is_pinned "${_src_name}" "${_sources_root}"; then
+                clean_sources "${_src_name}"
             fi
         fi
     fi

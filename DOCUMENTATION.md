@@ -992,7 +992,7 @@ bootstrap_pkg=yes
 
 Per-recipe override for the [`JINX_CLEAN_WORKDIRS`](<#environment-variables>) environment variable. Setting `clean_workdirs=no` keeps this recipe's build directory and downloaded sources around even when `JINX_CLEAN_WORKDIRS=yes` is set globally. Handy for recipes you iterate on frequently.
 
-A source tree shared through [`from_source`](<#from_source>)/[`from_host_source`](<#from_host_source>) is only ever reaped by the recipe that **owns** it: a consumer cleaning up after itself removes its own build directory but leaves the borrowed tree alone, because the owner and every other consumer still build against it. The owner in turn keeps the tree whenever *any* recipe sharing it sets `clean_workdirs=no` - that recipe's build directory outlives the cleanup and still points at the tree through [`source_dir`](<#provided-variables>), typically because it was configured out of tree, so reaping the source would leave it unusable.
+A source tree shared through [`from_source`](<#from_source>)/[`from_host_source`](<#from_host_source>) is reaped by whichever recipe sharing it builds, the one that owns it or one that borrows it, and the next recipe to need it fetches it again. It is kept, though, whenever *any* recipe sharing it sets `clean_workdirs=no` - that recipe's build directory outlives the cleanup and still points at the tree through [`source_dir`](<#provided-variables>), typically because it was configured out of tree, so reaping the source would leave it unusable.
 
 Example:
 
