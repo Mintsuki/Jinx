@@ -2793,6 +2793,15 @@ Acquire::Check-Valid-Until "0";' >> "$JINX_CACHE_DIR/sets/.image/etc/apt/apt.con
     fi
 }
 
+# The CMake platform file's path and contents, which the image holds a copy of.
+cmake_platform_stamp() {
+    if [[ -n ${JINX_CMAKE_PLATFORM-} ]]; then
+        local sum
+        sum="$(sha256sum <"${base_dir}/${JINX_CMAKE_PLATFORM}")"
+        echo "${JINX_CMAKE_PLATFORM} ${sum%% *}"
+    fi
+}
+
 first_use() {
     msg "Preparing the Jinx cache"
 
@@ -2801,6 +2810,7 @@ first_use() {
     echo "${jinx_version}" >"${JINX_CACHE_DIR}/version"
     echo "${JINX_DEBIAN_SNAPSHOT}" >"${JINX_CACHE_DIR}/debian_snapshot"
     echo "${JINX_BASE_PACKAGES-}" >"${JINX_CACHE_DIR}/base_packages"
+    cmake_platform_stamp >"${JINX_CACHE_DIR}/cmake_platform"
 
     msg "The Jinx cache is ready"
 }
@@ -2884,12 +2894,17 @@ if [[ -z ${JINX_ARCH-} ]]; then
     die "required config variable \$JINX_ARCH missing"
 fi
 
+if [[ -n ${JINX_CMAKE_PLATFORM-} && ! -f ${base_dir}/${JINX_CMAKE_PLATFORM} ]]; then
+    die "JINX_CMAKE_PLATFORM names '${JINX_CMAKE_PLATFORM}', which is not a file in the source directory"
+fi
+
 # Inside the build container, the cache is the one this very build runs from,
 # and a Jinxfile that evaluates differently there must not rebuild it.
 if [[ ${in_container} == false ]]; then
     if  [[ ! -f "${JINX_CACHE_DIR}/version" || $(cat "${JINX_CACHE_DIR}/version") != "${jinx_version}" ]] \
      || [[ ! -f "${JINX_CACHE_DIR}/debian_snapshot" || $(cat "${JINX_CACHE_DIR}/debian_snapshot") != "${JINX_DEBIAN_SNAPSHOT}" ]] \
-     || [[ ! -f "${JINX_CACHE_DIR}/base_packages" || $(cat "${JINX_CACHE_DIR}/base_packages") != "${JINX_BASE_PACKAGES-}" ]]; then
+     || [[ ! -f "${JINX_CACHE_DIR}/base_packages" || $(cat "${JINX_CACHE_DIR}/base_packages") != "${JINX_BASE_PACKAGES-}" ]] \
+     || [[ ! -f "${JINX_CACHE_DIR}/cmake_platform" || $(cat "${JINX_CACHE_DIR}/cmake_platform") != "$(cmake_platform_stamp)" ]]; then
         if [[ $(id -u) == 0 ]]; then
             rebuild_cache_as_owner
         else

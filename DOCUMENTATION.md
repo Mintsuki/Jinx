@@ -330,7 +330,7 @@ Useful for interactive debugging of build failures, running utilities against a 
 
 #### `rebuild-cache`
 
-Purges and re-creates `.jinx-cache/`. This re-downloads XBPS, re-runs `debootstrap`, and rebuilds the base container image. Run this if the cache becomes corrupt; otherwise, Jinx automatically refreshes the cache when its version, the Debian snapshot, or the base packages list change.
+Purges and re-creates `.jinx-cache/`. This re-downloads XBPS, re-runs `debootstrap`, and rebuilds the base container image. Run this if the cache becomes corrupt; otherwise, Jinx automatically refreshes the cache when its version, the Debian snapshot, the base packages list, or the CMake platform file (its path or its contents) change.
 
 ## Rebuild Behavior
 
@@ -404,7 +404,7 @@ The full set of Jinx-recognised variables in a `Jinxfile`:
 The base container image is a `minbase` Debian `sid` snapshot with `locales` and the following packages installed: `bash`, `bzip2`, `ca-certificates`, `curl`, `diffutils`, `findutils`, `gawk`, `git`, `grep`, `gzip`, `lzip`, `netbase`, `patch`, `procps`, `sed`, `tar`, `unzip`, `xz-utils`, `zstd`. Anything else a recipe needs at build time belongs in its [`imagedeps`](<#imagedeps>); `JINX_BASE_PACKAGES` is for tools that every recipe should have, including during source preparation, where per-recipe `imagedeps` do not apply and [`source_imagedeps`](<#source_>) is the only other way in.
 
 >[!note]
->`JINX_CMAKE_PLATFORM` copies the file into `usr/share/cmake-*/Modules/Platform/` of the base image, a directory that only exists once CMake is installed there - list `cmake` in `JINX_BASE_PACKAGES` alongside it.
+>`JINX_CMAKE_PLATFORM` copies the file into `usr/share/cmake-*/Modules/Platform/` of the base image, a directory that only exists once CMake is installed there - list `cmake` in `JINX_BASE_PACKAGES` alongside it. Editing the file rebuilds the cache on the next run, so that the images never hold an old copy.
 
 >[!note]
 >Helper functions referenced by recipes will be run inside the container, and will *not* run on the host. The `Jinxfile` itself, however, is sourced both on the host and inside the container on every Jinx invocation, so any *top-level* code (outside of function bodies) runs in both contexts - keep top-level code portable and put host- or container-specific work inside helper functions.
