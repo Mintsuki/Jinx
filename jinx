@@ -529,6 +529,17 @@ fi
 EOF
 }
 
+# Builds recurse into the missing packages they need, each in a subshell that
+# sees the chain of packages being built above it; meeting one of those again
+# is a dependency cycle, which would otherwise recurse forever.
+build_chain=
+enter_build() {
+    if [[ " ${build_chain} " == *" $1 "* ]]; then
+        die "dependency cycle: ${build_chain# } $1"
+    fi
+    build_chain="${build_chain} $1"
+}
+
 build_hostdeps() {
     local hostdep
     for hostdep in ${hostdeps} ${hostrundeps}; do
@@ -569,14 +580,25 @@ get_hostdeps_file() {
 }
 
 topo_sort_visit() {
-    [[ -n ${_visited[$1]+x} ]] && return
-    _visited[$1]=1
+    # A node still being visited when it is reached again closes a cycle.
+    case ${_visited[$1]-} in
+        done)
+            return
+            ;;
+        active)
+            local _cycle="${_path# } $1"
+            die "dependency cycle: ${_cycle//host\//host:}"
+            ;;
+    esac
+    _visited[$1]=active
+    local _path="${_path} $1"
 
     local _dep
     for _dep in ${_graph[$1]}; do
         [[ -n $_dep ]] && topo_sort_visit "$_dep"
     done
 
+    _visited[$1]=done
     _result="${_result}$1 "
 }
 
@@ -584,6 +606,7 @@ topo_sort() {
     local -A _graph
     local -A _visited
     local _result=
+    local _path=
 
     local _node _deps
     while IFS=: read -r _node _deps; do
@@ -1595,6 +1618,7 @@ do_regen() {
 }
 
 do_host_pkg() {
+    enter_build "host:$1"
     eval "$(include_recipe "${base_dir}"/host-recipes/$1)"
 
     if [[ -n ${from_source} ]]; then
@@ -1689,6 +1713,7 @@ do_host_pkg() {
 }
 
 do_pkg() {
+    enter_build "$1"
     eval "$(include_recipe "${base_dir}"/recipes/$1)"
 
     if [[ -n ${from_source} ]]; then
@@ -2066,7 +2091,9 @@ cmd_closure() {
     done
 
     local -a out=()
-    for node in $(topo_sort "${graph}"); do
+    local order
+    order="$(topo_sort "${graph}")"
+    for node in ${order}; do
         if [[ ${node} == host/* ]]; then
             if [[ ${missing_only} == yes \
                   && -f "${build_dir}/host-pkgs/$(host_pkg_filename "${node#host/}")" ]]; then
