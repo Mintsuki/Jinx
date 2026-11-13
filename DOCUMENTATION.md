@@ -288,7 +288,7 @@ Deletes everything that Jinx keeps for each recipe given, so that its next build
 
 Until something builds it again, the package is simply missing: [`build`](<#build>), and the build of anything that depends on it, rebuild it, but [`update`](<#update>) without `-b` passes it over, as it only updates packages built before.
 
-A recipe that takes its source from another one through [`from_source`](<#from_source>) or [`from_host_source`](<#from_host_source>) deletes that recipe's source, which every recipe sharing it then fetches anew, along with its own build directory and package. A local package (one using [`source_dir`](<#source_dir>)) keeps its own tree and only loses its stamp files, so that its preparation runs again. Downloaded archives stay in the cache, which holds them by their checksum.
+A source shared through [`from_source`](<#from_source>) or [`from_host_source`](<#from_host_source>) goes along with everything built from it: purging any recipe that builds from it purges the recipe that owns it, and every recipe that takes its source from it, as well. A local package (one using [`source_dir`](<#source_dir>)) keeps its own tree and only loses its stamp files, so that its preparation runs again. Downloaded archives stay in the cache, which holds them by their checksum.
 
 #### `install`
 
