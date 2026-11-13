@@ -160,7 +160,7 @@ sources/
 \-- <name>.prepared       # stamp: prepare() has been run
 ```
 
-The stamp files are what make source preparation happen exactly once: a `<name>.version` or `<name>.revision` that no longer matches the recipe owning the source wipes the whole family and forces a fresh fetch, patch and prepare, whichever of the recipes sharing the source builds first. A local package (one using [`source_dir`](<#source_dir>)) keeps its tree wherever the recipe points, so only the stamp files show up here - Jinx never patches, copies or deletes the tree itself. A recipe without a source has no entries here at all. [`purge`](<#purge>) deletes the whole family of a recipe's source when asked to.
+The stamp files are what make source preparation happen exactly once: a `<name>.version` or `<name>.revision` that no longer matches the recipe owning the source wipes the whole family and forces a fresh fetch, patch and prepare, whichever of the recipes sharing the source builds first. A local package (one using [`source_dir`](<#source_dir>)) keeps its tree wherever the recipe points, so only the stamp files show up here - Jinx never patches, copies or deletes the tree itself. A recipe without a source has no entries here at all. [`purge`](<#purge>) deletes the whole family, along with the recipe's build directory and package, when asked to.
 
 >[!note]
 >In-tree builds are explicitly forbidden. Running `jinx init` from a directory that already contains a `Jinxfile` will fail.
@@ -183,7 +183,7 @@ usage: jinx <command> [args...]
    rebuild            Rebuilds package(s) from scratch, after what they need that is missing
    revbump            Bumps the revision of all (transitive) dependents of package(s)
    regenerate|regen   Regenerates the working patch of package(s) and re-runs prepare()
-   purge              Deletes the source of package(s) and all Jinx keeps along with it
+   purge              Deletes the source, build directory, and package of package(s)
    install            Installs package(s) (use '-f' to reinstall)
    closure            Prints the package(s) and all they need, in build order; '-m': only the missing ones
    download           Downloads pre-built package(s), and what they need, from a repository
@@ -284,9 +284,11 @@ Only valid on source recipes (i.e. recipes that declare their own sources); atte
 jinx purge <recipe(s)>
 ```
 
-Deletes everything that `sources/` holds for the source of each recipe given (`host-sources/` for a `host:` recipe): the tree, its `-clean` and `-workdir` copies, and its stamp files, so that the next build fetches, patches, and prepares it afresh. This is what deleting `sources/<name>*` by hand is usually meant to do, without the risk of that glob also catching the source of another recipe whose name starts with `<name>`.
+Deletes everything that Jinx keeps for each recipe given, so that its next build starts from nothing: what `sources/` holds for its source (`host-sources/` for a `host:` recipe) - the tree, its `-clean` and `-workdir` copies, and its stamp files - its build directory under `builds/` (`host-builds/`), and its package under `pkgs/` (`host-pkgs/`), which leaves the XBPS repository index too. This is what deleting all of those by hand is usually meant to do, without the risk of a glob like `sources/<name>*` also catching another recipe whose name starts with `<name>`.
 
-A recipe that takes its source from another one through [`from_source`](<#from_source>) or [`from_host_source`](<#from_host_source>) purges that recipe's source, which every recipe sharing it then fetches anew. A local package (one using [`source_dir`](<#source_dir>)) keeps its own tree and only loses its stamp files, so that its preparation runs again. Build directories are left alone; [`rebuild`](<#rebuild>) is what starts those over.
+Until something builds it again, the package is simply missing: [`build`](<#build>), and the build of anything that depends on it, rebuild it, but [`update`](<#update>) without `-b` passes it over, as it only updates packages built before.
+
+A recipe that takes its source from another one through [`from_source`](<#from_source>) or [`from_host_source`](<#from_host_source>) deletes that recipe's source, which every recipe sharing it then fetches anew, along with its own build directory and package. A local package (one using [`source_dir`](<#source_dir>)) keeps its own tree and only loses its stamp files, so that its preparation runs again. Downloaded archives stay in the cache, which holds them by their checksum.
 
 #### `install`
 

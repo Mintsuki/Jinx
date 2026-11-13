@@ -139,7 +139,7 @@ jinx_cmd_help() {
     printf "\n   rebuild            Rebuilds package(s) from scratch, after what they need that is missing"
     printf "\n   revbump            Bumps the revision of all (transitive) dependents of package(s)"
     printf "\n   regenerate|regen   Regenerates the working patch of package(s) and re-runs prepare()"
-    printf "\n   purge              Deletes the source of package(s) and all Jinx keeps along with it"
+    printf "\n   purge              Deletes the source, build directory, and package of package(s)"
     printf "\n   install            Installs package(s) (use '-f' to reinstall)"
     printf "\n   closure            Prints the package(s) and all they need, in build order; '-m': only the missing ones"
     printf "\n   download           Downloads pre-built package(s), and what they need, from a repository"
@@ -2332,25 +2332,13 @@ jinx_cmd_regen() {
 }
 
 # Removes what sources/ (or host-sources/) holds for the source of recipe $2
-# from $1 (recipes or host-recipes), which $3 names as the command line did.
+# from $1 (recipes or host-recipes).
 jinx_purge_source() {
     eval "$(jinx_source_source_recipe "$2" "$1")"
     eval "$(jinx_get_real_source_dir)"
 
-    local shown="$2"
-    if [[ $1 == host-recipes ]]; then
-        shown="host:$2"
-    fi
-
     if [[ ${is_sourceless_package} == true ]]; then
-        jinx_msg "Nothing to purge for $3, which has no source"
         return
-    fi
-
-    if [[ ${shown} == "$3" ]]; then
-        jinx_msg "Purging the source of ${shown}"
-    else
-        jinx_msg "Purging the source of ${shown}, which $3 builds from"
     fi
     if [[ ${is_local_package} == true ]]; then
         jinx_msg2 "Leaving its own tree, ${source_dir#"${base_dir}/"}/, alone"
@@ -2363,20 +2351,63 @@ jinx_cmd_purge() {
         die "purge requires at least one package name"
     fi
 
-    # A source that several of the recipes share goes only once.
-    local -A purged=()
-    local pkgs pkg dir owner
+    local -A purged_sources=() purged_repos=()
+    local pkgs pkg dir name kind owner owner_shown files file
     pkgs="$(jinx_expand_recipes "$@")"
     for pkg in ${pkgs}; do
         dir=recipes
+        kind=
         if [[ ${pkg} == host:* ]]; then
             dir=host-recipes
+            kind=host-
         fi
-        owner="$(eval "$(jinx_recipe_info "${dir}" "${pkg#host:}")" \
-            && echo "${_from_source_dir}/${from_source:-${pkg#host:}}")"
-        if [[ -z ${purged[${owner}]+x} ]]; then
-            purged[${owner}]=1
-            jinx_tracked_subshell 'jinx_purge_source "${owner%%/*}" "${owner#*/}" "${pkg}"'
+        name="${pkg#host:}"
+        jinx_msg "Purging ${pkg}"
+
+        # A source that several of the recipes share goes only once.
+        owner="$(eval "$(jinx_recipe_info "${dir}" "${name}")" \
+            && echo "${_from_source_dir}/${from_source:-${name}}")"
+        if [[ -z ${purged_sources[${owner}]+x} ]]; then
+            purged_sources[${owner}]=1
+            if [[ ${owner} != "${dir}/${name}" ]]; then
+                owner_shown="${owner#*/}"
+                if [[ ${owner} == host-recipes/* ]]; then
+                    owner_shown="host:${owner_shown}"
+                fi
+                jinx_msg2 "Deleting the source of ${owner_shown}, which it builds from"
+            fi
+            jinx_tracked_subshell 'jinx_purge_source "${owner%%/*}" "${owner#*/}"'
+        fi
+
+        # The package directory is where package() installed to, and only
+        # outlives a build that failed before the package got made.
+        jinx_force_remove "${build_dir}/${kind}builds/${name}" \
+            "${build_dir}/${kind}builds/${name}.configured" \
+            "${build_dir}/${kind}pkgs/${name}"
+        if [[ -n ${kind} ]]; then
+            files="$(jinx_pkg_files_of "${name}" "${build_dir}/host-pkgs" "${host_arch}")"
+        else
+            files="$(jinx_pkg_files_of "${name}" "${build_dir}/pkgs" "${JINX_ARCH}")"
+        fi
+        while IFS= read -r file; do
+            if [[ -n ${file} ]]; then
+                rm -f "${file}" "${file}.sig" "${file}.sig2"
+            fi
+        done <<<"${files}"
+        purged_repos[${kind}pkgs]=1
+    done
+
+    # The index drops the packages whose files are gone.
+    local repo
+    for repo in "${!purged_repos[@]}"; do
+        if [[ ${repo} == host-pkgs ]]; then
+            XBPS_ARCH=invalid \
+            XBPS_TARGET_ARCH="${host_arch}" \
+                xbps-rindex -c "${build_dir}/host-pkgs"
+        else
+            XBPS_ARCH=invalid \
+            XBPS_TARGET_ARCH="${JINX_ARCH}" \
+                xbps-rindex -c "${build_dir}/pkgs"
         fi
     done
 }
