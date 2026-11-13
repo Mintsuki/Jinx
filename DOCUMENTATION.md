@@ -160,7 +160,7 @@ sources/
 \-- <name>.prepared       # stamp: prepare() has been run
 ```
 
-The stamp files are what make source preparation happen exactly once: a `<name>.version` or `<name>.revision` that no longer matches the recipe owning the source wipes the whole family and forces a fresh fetch, patch and prepare, whichever of the recipes sharing the source builds first. A local package (one using [`source_dir`](<#source_dir>)) keeps its tree wherever the recipe points, so only the stamp files show up here - Jinx never patches, copies or deletes the tree itself. A recipe without a source has no entries here at all. [`purge`](<#purge>) deletes the whole family, along with the recipe's build directory and package, when asked to.
+The stamp files are what make source preparation happen exactly once: a `<name>.version` or `<name>.revision` that no longer matches the recipe owning the source wipes the whole family and forces a fresh fetch, patch and prepare, whichever of the recipes sharing the source builds first. A local package (one using [`source_dir`](<#source_dir>)) keeps its tree wherever the recipe points, so only the stamp files show up here - Jinx never patches, copies or deletes the tree itself. A recipe without a source has no entries here at all. [`purge`](<#purge>) deletes the whole family, along with the build directory and package of every recipe that builds from the source, when asked to.
 
 >[!note]
 >In-tree builds are explicitly forbidden. Running `jinx init` from a directory that already contains a `Jinxfile` will fail.
@@ -183,7 +183,7 @@ usage: jinx <command> [args...]
    rebuild            Rebuilds package(s) from scratch, after what they need that is missing
    revbump            Bumps the revision of all (transitive) dependents of package(s)
    regenerate|regen   Regenerates the working patch of package(s) and re-runs prepare()
-   purge              Deletes the source, build directory, and package of package(s)
+   purge              Deletes the source, build directory, and package of package(s), and of those sharing the source
    install            Installs package(s) (use '-f' to reinstall)
    closure            Prints the package(s) and all they need, in build order; '-m': only the missing ones
    download           Downloads pre-built package(s), and what they need, from a repository

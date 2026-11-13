@@ -139,7 +139,7 @@ jinx_cmd_help() {
     printf "\n   rebuild            Rebuilds package(s) from scratch, after what they need that is missing"
     printf "\n   revbump            Bumps the revision of all (transitive) dependents of package(s)"
     printf "\n   regenerate|regen   Regenerates the working patch of package(s) and re-runs prepare()"
-    printf "\n   purge              Deletes the source, build directory, and package of package(s)"
+    printf "\n   purge              Deletes the source, build directory, and package of package(s), and of those sharing the source"
     printf "\n   install            Installs package(s) (use '-f' to reinstall)"
     printf "\n   closure            Prints the package(s) and all they need, in build order; '-m': only the missing ones"
     printf "\n   download           Downloads pre-built package(s), and what they need, from a repository"
